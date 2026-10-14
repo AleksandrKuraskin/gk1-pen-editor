@@ -1,39 +1,37 @@
 #include "cairo.h"
 #include <gtk/gtk.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define WIDTH 800
-#define HEIGHT 600
+#include "config.h"
 
 typedef struct {
   int width;
   int height;
   uint32_t *pixels;
-} Framebuffer;
+} FrameBuffer;
 
-static Framebuffer *fb = NULL;
+static FrameBuffer *fb = NULL;
 
-Framebuffer *fb_create(int w, int h) {
-  Framebuffer *buf = malloc(sizeof(Framebuffer));
+FrameBuffer *fb_create(int w, int h) {
+  FrameBuffer *buf = malloc(sizeof(FrameBuffer));
   buf->width = w;
   buf->height = h;
   buf->pixels = calloc(w * h, sizeof(uint32_t));
   return buf;
 }
 
-void fb_clear(Framebuffer *buf) {
+void fb_clear(FrameBuffer *buf) {
   memset(buf->pixels, 50, buf->width * buf->height * sizeof(uint32_t));
 }
 
-void fb_put_pixel(Framebuffer *buf, int x, int y, uint32_t color) {
+void fb_put_pixel(FrameBuffer *buf, int x, int y, uint32_t color) {
   if (x >= 0 && x < buf->width && y >= 0 && y < buf->height) {
     buf->pixels[y * buf->width + x] = color;
   }
 }
 
-void draw_line_bresenham(Framebuffer *buf, int x0, int y0, int x1, int y1,
+void draw_line_bresenham(FrameBuffer *buf, int x0, int y0, int x1, int y1,
                          uint32_t color) {
   int dx = abs(x1 - x0);
   int sx = x0 < x1 ? 1 : -1;
@@ -81,13 +79,16 @@ static void activate(GtkApplication *app, gpointer user_data) {
   (void)user_data;
 
   GtkWidget *window = gtk_application_window_new(app);
-  gtk_window_set_title(GTK_WINDOW(window), "Edytor - Bufor RAM w GTK 4");
-  gtk_window_set_default_size(GTK_WINDOW(window), WIDTH, HEIGHT);
+  gtk_window_set_title(GTK_WINDOW(window), CONFIG_APP_NAME);
+  gtk_window_set_default_size(GTK_WINDOW(window), CONFIG_WINDOW_WIDTH,
+                              CONFIG_WINDOW_HEIGHT);
   gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
 
   GtkWidget *drawing_area = gtk_drawing_area_new();
-  gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(drawing_area), WIDTH);
-  gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(drawing_area), HEIGHT);
+  gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(drawing_area),
+                                     CONFIG_CANVAS_WIDTH);
+  gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(drawing_area),
+                                      CONFIG_CANVAS_HEIGHT);
 
   // W GTK 4 rejestrujemy funkcję rysującą za pomocą draw_func
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(drawing_area),
@@ -98,14 +99,14 @@ static void activate(GtkApplication *app, gpointer user_data) {
 }
 
 int main(int argc, char **argv) {
-  fb = fb_create(WIDTH, HEIGHT);
+  fb = fb_create(CONFIG_CANVAS_WIDTH, CONFIG_CANVAS_HEIGHT);
   fb_clear(fb);
 
   // Rysowanie testowe Bresenhamem
-  draw_line_bresenham(fb, 50, 50, 750, 550, 0xFFFF3333);
-  draw_line_bresenham(fb, 50, 550, 750, 50, 0xFF33FF33);
+  draw_line_bresenham(fb, 50, 50, 750, 550, CONFIG_DEMO_RED);
+  draw_line_bresenham(fb, 50, 550, 750, 50, CONFIG_DEMO_GREEN);
 
-  GtkApplication *app = gtk_application_new("org.example.polygoneditor",
+  GtkApplication *app = gtk_application_new(CONFIG_APP_ID,
                                             G_APPLICATION_DEFAULT_FLAGS);
   g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
   int status = g_application_run(G_APPLICATION(app), argc, argv);
