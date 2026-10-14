@@ -3,7 +3,7 @@ CFLAGS ?= -Wall -Wextra -O2 $(shell pkg-config --cflags gtk4)
 LDFLAGS ?= $(shell pkg-config --libs gtk4) -lm
 
 TARGET = app
-SRCS = main.c
+SRCS = test.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)
