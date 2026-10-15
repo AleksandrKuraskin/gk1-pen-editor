@@ -20,8 +20,12 @@
 
 /* Rendering defaults */
 #define CONFIG_EDGE_WIDTH 2
+#define CONFIG_GRID_SPACING 20
+#define CONFIG_GRID_DOT_RADIUS 1.0
 
-/* Prototype framebuffer colors in ARGB format */
+/* Canvas and grid colors in ARGB format */
+#define CONFIG_CANVAS_BACKGROUND UINT32_C(0xFF111122)
+#define CONFIG_GRID_COLOR UINT32_C(0x2A8CA6BF)
 #define CONFIG_DEMO_RED UINT32_C(0xFFFF3333)
 #define CONFIG_DEMO_GREEN UINT32_C(0xFF33FF33)
 
