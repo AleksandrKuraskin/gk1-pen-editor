@@ -1,5 +1,4 @@
-#include "pixel_buffer.h"
-#include "config.h"
+#include "view/pixel_buffer.h"
 
 #include <stddef.h>
 #include <stdint.h>

@@ -1,9 +1,9 @@
 #include <cairo.h>
 #include <gtk/gtk.h>
 
-#include "config.h"
-#include "pixel_buffer.h"
-#include "renderer.h"
+#include "config/config.h"
+#include "view/pixel_buffer.h"
+#include "view/renderer.h"
 
 static void activate(GtkApplication *app, gpointer user_data) {
   PixelBuffer *pb = user_data;

@@ -29,6 +29,7 @@
 *.dylib
 
 # Executables
+/polypen
 *.exe
 *.out
 *.app

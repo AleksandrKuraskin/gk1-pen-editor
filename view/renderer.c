@@ -1,8 +1,8 @@
-#include "renderer.h"
+#include "view/renderer.h"
 
-#include "cairo.h"
-#include "config.h"
-#include "data.h"
+#include "config/config.h"
+#include "view/pixel_buffer.h"
+#include <cairo.h>
 
 static void renderer_set_source_argb(cairo_t *cr, uint32_t color) {
   double alpha = ((color >> 24) & 0xFF) / 255.0;
