@@ -8,13 +8,13 @@
 #define CONFIG_APP_NAME "PolyPen"
 
 /* Initial window and canvas size, in pixels */
-#define CONFIG_WINDOW_WIDTH 800
-#define CONFIG_WINDOW_HEIGHT 600
-#define CONFIG_CANVAS_WIDTH 800
-#define CONFIG_CANVAS_HEIGHT 600
+#define CONFIG_WINDOW_WIDTH 1280
+#define CONFIG_WINDOW_HEIGHT 720
+#define CONFIG_CANVAS_WIDTH 10
+#define CONFIG_CANVAS_HEIGHT 10
 
 /* Editor interaction sizes, in pixels */
-#define CONFIG_VERTEX_RADIUS 4
+#define CONFIG_POINT_RADIUS 4
 #define CONFIG_CONTROL_POINT_RADIUS 4
 #define CONFIG_PICK_TOLERANCE 8
 
