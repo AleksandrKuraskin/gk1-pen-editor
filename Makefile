@@ -3,7 +3,7 @@ CFLAGS ?= -Wall -Wextra -O2 -I. $(shell pkg-config --cflags gtk4)
 LDFLAGS ?= $(shell pkg-config --libs gtk4) -lm
 
 TARGET = polypen
-SRCS = app/main.c controller/drawing_area_controller.c model/app_state.c model/point.c view/pixel_buffer.c view/renderer.c
+SRCS = app/main.c controller/drawing_area_controller.c model/app_state.c model/edge.c model/point.c view/pixel_buffer.c view/renderer.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)

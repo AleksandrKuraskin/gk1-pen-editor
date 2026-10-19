@@ -6,7 +6,6 @@
 #include "config/config.h"
 
 #include "model/app_state.h"
-#include "view/renderer.h"
 
 static DragState drag_state = {
     .state = NULL, .selected_point = NULL, .dragging = FALSE};
@@ -78,19 +77,11 @@ void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
 
 void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
                            double y, gpointer user_data) {
+  (void)n_press;
+  (void)gesture;
+
   AppState *state = user_data;
   if (state == NULL) {
-    return;
-  }
-
-  if (n_press == 2) {
-    app_state_add_point(state, x, y);
-
-    GtkWidget *widget =
-        gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-    if (widget != NULL) {
-      gtk_widget_queue_draw(widget);
-    }
     return;
   }
 
