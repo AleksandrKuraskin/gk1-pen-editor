@@ -56,3 +56,14 @@ int edge_list_append(EdgeList *list, Point *start, Point *end) {
   list->count += 1;
   return 1;
 }
+
+int edge_set_bezier(Edge *edge, Point control1, Point control2) {
+  if (edge == NULL) {
+    return 0;
+  }
+
+  edge->type = EDGE_TYPE_BEZIER;
+  edge->geometry.bezier.control1 = control1;
+  edge->geometry.bezier.control2 = control2;
+  return 1;
+}

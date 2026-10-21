@@ -20,6 +20,22 @@ typedef struct {
 
 static EdgeMenuState edge_menu_state;
 
+static void drawing_area_clamp_to_canvas(GtkWidget *widget, double *x,
+                                         double *y) {
+  if (widget == NULL || x == NULL || y == NULL) {
+    return;
+  }
+
+  int width = gtk_widget_get_width(widget);
+  int height = gtk_widget_get_height(widget);
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+
+  *x = fmin(fmax(*x, 0.0), (double)width);
+  *y = fmin(fmax(*y, 0.0), (double)height);
+}
+
 static EdgeNode *drawing_area_find_edge_near_cursor(AppState *state, double x,
                                                     double y, double *closest_x,
                                                     double *closest_y) {
@@ -66,10 +82,57 @@ static void edge_menu_close(void) {
   edge_menu_state.edge = NULL;
 }
 
+static void edge_menu_destroy(void) {
+  if (edge_menu_state.popover == NULL) {
+    return;
+  }
+
+  gtk_popover_popdown(GTK_POPOVER(edge_menu_state.popover));
+  if (gtk_widget_get_parent(edge_menu_state.popover) != NULL) {
+    gtk_widget_unparent(edge_menu_state.popover);
+  }
+  edge_menu_state.popover = NULL;
+}
+
+static void edge_menu_set_bezier_defaults(EdgeNode *edge) {
+  if (edge == NULL || edge->edge.start == NULL || edge->edge.end == NULL) {
+    return;
+  }
+
+  double dx = edge->edge.end->x - edge->edge.start->x;
+  double dy = edge->edge.end->y - edge->edge.start->y;
+  double length = hypot(dx, dy);
+
+  if (length == 0.0) {
+    edge_set_bezier(&edge->edge, *edge->edge.start, *edge->edge.end);
+    return;
+  }
+
+  double normal_x = -dy / length;
+  double normal_y = dx / length;
+  double offset = length * 0.28;
+
+  Point control1 = {
+      edge->edge.start->x + dx * 0.33 + normal_x * offset,
+      edge->edge.start->y + dy * 0.33 + normal_y * offset,
+  };
+  Point control2 = {
+      edge->edge.end->x - dx * 0.33 + normal_x * offset,
+      edge->edge.end->y - dy * 0.33 + normal_y * offset,
+  };
+
+  edge_set_bezier(&edge->edge, control1, control2);
+}
+
 static void edge_menu_set_type(GtkButton *button, gpointer user_data) {
   (void)button;
   if (edge_menu_state.edge != NULL) {
-    edge_menu_state.edge->edge.type = (EdgeType)GPOINTER_TO_INT(user_data);
+    EdgeType type = (EdgeType)GPOINTER_TO_INT(user_data);
+    if (type == EDGE_TYPE_BEZIER) {
+      edge_menu_set_bezier_defaults(edge_menu_state.edge);
+    } else {
+      edge_menu_state.edge->edge.type = type;
+    }
     gtk_widget_queue_draw(edge_menu_state.drawing_area);
   }
   edge_menu_close();
@@ -119,7 +182,11 @@ static void drawing_area_secondary_click_cb(GtkGestureClick *gesture,
 static void drawing_area_create_edge_menu(GtkWidget *drawing_area) {
   edge_menu_state.drawing_area = drawing_area;
   edge_menu_state.popover = gtk_popover_new();
-  gtk_widget_set_parent(edge_menu_state.popover, drawing_area);
+  if (edge_menu_state.popover != NULL) {
+    gtk_widget_set_parent(edge_menu_state.popover, drawing_area);
+    g_signal_connect(drawing_area, "destroy", G_CALLBACK(edge_menu_destroy),
+                     NULL);
+  }
 
   GtkWidget *menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
@@ -165,6 +232,36 @@ Point *drawing_area_find_point_under_cursor(AppState *state, double x,
   return NULL;
 }
 
+static EdgeNode *
+drawing_area_find_bezier_handle_under_cursor(AppState *state, double x,
+                                             double y, int *handle_index) {
+  if (state == NULL || state->edges == NULL || handle_index == NULL) {
+    return NULL;
+  }
+
+  for (EdgeNode *node = state->edges->head; node != NULL; node = node->next) {
+    if (node->edge.type != EDGE_TYPE_BEZIER) {
+      continue;
+    }
+
+    double dx1 = node->edge.geometry.bezier.control1.x - x;
+    double dy1 = node->edge.geometry.bezier.control1.y - y;
+    if (hypot(dx1, dy1) <= CONFIG_CONTROL_POINT_RADIUS + 4.0) {
+      *handle_index = 0;
+      return node;
+    }
+
+    double dx2 = node->edge.geometry.bezier.control2.x - x;
+    double dy2 = node->edge.geometry.bezier.control2.y - y;
+    if (hypot(dx2, dy2) <= CONFIG_CONTROL_POINT_RADIUS + 4.0) {
+      *handle_index = 1;
+      return node;
+    }
+  }
+
+  return NULL;
+}
+
 void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state) {
   if (drawing_area == NULL || state == NULL) {
     return;
@@ -172,6 +269,8 @@ void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state) {
 
   drag_state.state = state;
   drag_state.selected_point = NULL;
+  drag_state.selected_bezier_edge = NULL;
+  drag_state.selected_bezier_handle = -1;
   drag_state.dragging = FALSE;
   drawing_area_create_edge_menu(drawing_area);
 
@@ -203,15 +302,34 @@ void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
   (void)controller;
   (void)user_data;
 
-  if (!drag_state.dragging || drag_state.selected_point == NULL) {
+  if (!drag_state.dragging) {
     return;
   }
 
-  drag_state.selected_point->x = x;
-  drag_state.selected_point->y = y;
-
   GtkWidget *widget =
       gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller));
+
+  if (drag_state.selected_point != NULL) {
+    double next_x = x;
+    double next_y = y;
+    drawing_area_clamp_to_canvas(widget, &next_x, &next_y);
+    drag_state.selected_point->x = next_x;
+    drag_state.selected_point->y = next_y;
+  } else if (drag_state.selected_bezier_edge != NULL &&
+             drag_state.selected_bezier_edge->edge.type == EDGE_TYPE_BEZIER) {
+    double next_x = x;
+    double next_y = y;
+    drawing_area_clamp_to_canvas(widget, &next_x, &next_y);
+
+    if (drag_state.selected_bezier_handle == 0) {
+      drag_state.selected_bezier_edge->edge.geometry.bezier.control1.x = next_x;
+      drag_state.selected_bezier_edge->edge.geometry.bezier.control1.y = next_y;
+    } else if (drag_state.selected_bezier_handle == 1) {
+      drag_state.selected_bezier_edge->edge.geometry.bezier.control2.x = next_x;
+      drag_state.selected_bezier_edge->edge.geometry.bezier.control2.y = next_y;
+    }
+  }
+
   if (widget != NULL) {
     gtk_widget_queue_draw(widget);
   }
@@ -228,7 +346,15 @@ void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
   }
 
   drag_state.selected_point = drawing_area_find_point_under_cursor(state, x, y);
-  drag_state.dragging = (drag_state.selected_point != NULL);
+  if (drag_state.selected_point != NULL) {
+    drag_state.dragging = TRUE;
+    return;
+  }
+
+  drag_state.selected_bezier_edge =
+      drawing_area_find_bezier_handle_under_cursor(
+          state, x, y, &drag_state.selected_bezier_handle);
+  drag_state.dragging = (drag_state.selected_bezier_edge != NULL);
 }
 
 void drawing_area_release_cb(GtkGestureClick *gesture, int n_press, double x,
@@ -241,4 +367,6 @@ void drawing_area_release_cb(GtkGestureClick *gesture, int n_press, double x,
 
   drag_state.dragging = FALSE;
   drag_state.selected_point = NULL;
+  drag_state.selected_bezier_edge = NULL;
+  drag_state.selected_bezier_handle = -1;
 }

@@ -28,6 +28,48 @@ static void renderer_draw_background(cairo_t *cr, int width, int height) {
   cairo_fill(cr);
 }
 
+static int renderer_bezier_segment_count(Point p0, Point p1, Point p2,
+                                         Point p3) {
+  double polygon_length = hypot(p1.x - p0.x, p1.y - p0.y) +
+                          hypot(p2.x - p1.x, p2.y - p1.y) +
+                          hypot(p3.x - p2.x, p3.y - p2.y);
+
+  if (polygon_length <= 0.0) {
+    return CONFIG_BEZIER_MIN_SEGMENTS;
+  }
+
+  int segments = (int)ceil(polygon_length / CONFIG_BEZIER_SEGMENT_LENGTH);
+  if (segments < CONFIG_BEZIER_MIN_SEGMENTS) {
+    segments = CONFIG_BEZIER_MIN_SEGMENTS;
+  }
+  if (segments > CONFIG_BEZIER_MAX_SEGMENTS) {
+    segments = CONFIG_BEZIER_MAX_SEGMENTS;
+  }
+
+  return segments;
+}
+
+static void renderer_draw_bezier_incremental(PixelBuffer *buffer, Point p0,
+                                             Point p1, Point p2, Point p3,
+                                             uint32_t color) {
+  int segments = renderer_bezier_segment_count(p0, p1, p2, p3);
+  double previous_x = p0.x;
+  double previous_y = p0.y;
+
+  for (int i = 1; i <= segments; i++) {
+    double t = (double)i / (double)segments;
+    double inv_t = 1.0 - t;
+    double x = inv_t * inv_t * inv_t * p0.x + 3.0 * inv_t * inv_t * t * p1.x +
+               3.0 * inv_t * t * t * p2.x + t * t * t * p3.x;
+    double y = inv_t * inv_t * inv_t * p0.y + 3.0 * inv_t * inv_t * t * p1.y +
+               3.0 * inv_t * t * t * p2.y + t * t * t * p3.y;
+
+    renderer_draw_line_bresenham(buffer, previous_x, previous_y, x, y, color);
+    previous_x = x;
+    previous_y = y;
+  }
+}
+
 void renderer_draw_line_bresenham(PixelBuffer *buffer, double start_x,
                                   double start_y, double end_x, double end_y,
                                   uint32_t color) {
@@ -87,9 +129,50 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
           continue;
         }
 
-        renderer_draw_line_bresenham(buffer, node->edge.start->x,
-                                     node->edge.start->y, node->edge.end->x,
-                                     node->edge.end->y, CONFIG_DEMO_GREEN);
+        switch (node->edge.type) {
+        case EDGE_TYPE_BEZIER:
+          renderer_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
+          cairo_set_line_width(cr, 1.0);
+          cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
+          cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
+          cairo_stroke(cr);
+
+          renderer_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
+          cairo_set_dash(cr, (double[]){8.0, 6.0}, 2, 0.0);
+          cairo_set_line_width(cr, 1.5);
+          cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
+          cairo_line_to(cr, node->edge.geometry.bezier.control1.x,
+                        node->edge.geometry.bezier.control1.y);
+          cairo_line_to(cr, node->edge.geometry.bezier.control2.x,
+                        node->edge.geometry.bezier.control2.y);
+          cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
+          cairo_stroke(cr);
+          cairo_set_dash(cr, NULL, 0, 0.0);
+
+          renderer_draw_bezier_incremental(
+              buffer, *(node->edge.start), node->edge.geometry.bezier.control1,
+              node->edge.geometry.bezier.control2, *(node->edge.end),
+              CONFIG_EDGE_COLOR);
+
+          renderer_set_source_argb(cr, CONFIG_CONTROL_POINT_COLOR);
+          cairo_arc(cr, node->edge.geometry.bezier.control1.x,
+                    node->edge.geometry.bezier.control1.y,
+                    CONFIG_CONTROL_POINT_RADIUS, 0, 2 * G_PI);
+          cairo_fill(cr);
+          cairo_arc(cr, node->edge.geometry.bezier.control2.x,
+                    node->edge.geometry.bezier.control2.y,
+                    CONFIG_CONTROL_POINT_RADIUS, 0, 2 * G_PI);
+          cairo_fill(cr);
+          break;
+
+        case EDGE_TYPE_STRAIGHT:
+        case EDGE_TYPE_ARC:
+        default:
+          renderer_draw_line_bresenham(buffer, node->edge.start->x,
+                                       node->edge.start->y, node->edge.end->x,
+                                       node->edge.end->y, CONFIG_EDGE_COLOR);
+          break;
+        }
       }
     }
 
@@ -110,7 +193,7 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
     return;
   }
 
-  renderer_set_source_argb(cr, CONFIG_DEMO_RED);
+  renderer_set_source_argb(cr, CONFIG_POINT_COLOR);
   for (PointNode *node = state->points->head; node != NULL; node = node->next) {
     if (node->point == NULL) {
       continue;

@@ -8,6 +8,8 @@
 typedef struct {
   AppState *state;
   Point *selected_point;
+  EdgeNode *selected_bezier_edge;
+  int selected_bezier_handle;
   gboolean dragging;
 } DragState;
 

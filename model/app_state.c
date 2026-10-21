@@ -1,5 +1,6 @@
 #include "model/app_state.h"
 
+#include <math.h>
 #include <stdlib.h>
 
 static Point *app_state_add_point(AppState *state, double x, double y) {
@@ -40,6 +41,38 @@ static int app_state_add_sample_polygon(AppState *state) {
     if (!app_state_add_edge(state, points[i], points[(i + 1) % point_count])) {
       return 0;
     }
+  }
+
+  if (state->edges == NULL || state->edges->head == NULL) {
+    return 0;
+  }
+
+  EdgeNode *bezier_edge = state->edges->head;
+  const Point *start = bezier_edge->edge.start;
+  const Point *end = bezier_edge->edge.end;
+  double dx = end->x - start->x;
+  double dy = end->y - start->y;
+  double length = hypot(dx, dy);
+
+  if (length == 0.0) {
+    return 0;
+  }
+
+  double normal_x = -dy / length;
+  double normal_y = dx / length;
+  double offset = length * 0.28;
+
+  Point control1 = {
+      start->x + dx * 0.33 + normal_x * offset,
+      start->y + dy * 0.33 + normal_y * offset,
+  };
+  Point control2 = {
+      end->x - dx * 0.33 + normal_x * offset,
+      end->y - dy * 0.33 + normal_y * offset,
+  };
+
+  if (!edge_set_bezier(&bezier_edge->edge, control1, control2)) {
+    return 0;
   }
 
   return 1;

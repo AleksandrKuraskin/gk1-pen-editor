@@ -3,30 +3,37 @@
 
 #include <stdint.h>
 
-/* Application */
+// Application
 #define CONFIG_APP_ID "org.gk.polypen"
 #define CONFIG_APP_NAME "PolyPen"
 
-/* Initial window and canvas size, in pixels */
+// Initial window and canvas size, in pixels
 #define CONFIG_WINDOW_WIDTH 1280
 #define CONFIG_WINDOW_HEIGHT 720
 #define CONFIG_CANVAS_WIDTH 10
 #define CONFIG_CANVAS_HEIGHT 10
 
-/* Editor interaction sizes, in pixels */
+// Editor interaction sizes, in pixels
 #define CONFIG_POINT_RADIUS 4
 #define CONFIG_CONTROL_POINT_RADIUS 4
 #define CONFIG_PICK_TOLERANCE 8
 
-/* Rendering defaults */
+// Rendering defaults
 #define CONFIG_EDGE_WIDTH 2
 #define CONFIG_GRID_SPACING 20
 #define CONFIG_GRID_DOT_RADIUS 1.0
 
-/* Canvas and grid colors in ARGB format */
+// Canvas and grid colors in ARGB format
 #define CONFIG_CANVAS_BACKGROUND UINT32_C(0xFF111122)
-#define CONFIG_GRID_COLOR UINT32_C(0x2A8CA6BF)
-#define CONFIG_DEMO_RED UINT32_C(0xFFFF3333)
-#define CONFIG_DEMO_GREEN UINT32_C(0xFF33FF33)
+#define CONFIG_GRID_COLOR UINT32_C(0xFF334155)
+#define CONFIG_EDGE_COLOR UINT32_C(0xFFE2E8F0)
+#define CONFIG_EDGE_ANCHOR_COLOR UINT32_C(0xFF94A3B8)
+#define CONFIG_CONTROL_POINT_COLOR UINT32_C(0xFF94A3B8)
+#define CONFIG_POINT_COLOR UINT32_C(0xFFE2E8F0)
+
+// Bezier constraints
+#define CONFIG_BEZIER_MIN_SEGMENTS 8
+#define CONFIG_BEZIER_MAX_SEGMENTS 200
+#define CONFIG_BEZIER_SEGMENT_LENGTH 16.0
 
 #endif

@@ -48,5 +48,6 @@ typedef struct {
 EdgeList *edge_list_create(void);
 void edge_list_destroy(EdgeList *list);
 int edge_list_append(EdgeList *list, Point *start, Point *end);
+int edge_set_bezier(Edge *edge, Point control1, Point control2);
 
 #endif
