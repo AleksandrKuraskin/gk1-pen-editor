@@ -5,9 +5,16 @@
 
 #include "model/point.h"
 
+typedef enum {
+  EDGE_TYPE_STRAIGHT,
+  EDGE_TYPE_BEZIER,
+  EDGE_TYPE_ARC
+} EdgeType;
+
 typedef struct {
   Point *start;
   Point *end;
+  EdgeType type;
 } Edge;
 
 typedef struct EdgeNode {

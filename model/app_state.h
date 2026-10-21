@@ -11,5 +11,7 @@ typedef struct {
 
 AppState *app_state_create(void);
 void app_state_destroy(AppState *state);
+int app_state_insert_vertex(AppState *state, EdgeNode *edge, double x,
+                            double y);
 
 #endif

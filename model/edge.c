@@ -40,6 +40,7 @@ int edge_list_append(EdgeList *list, Point *start, Point *end) {
 
   node->edge.start = start;
   node->edge.end = end;
+  node->edge.type = EDGE_TYPE_STRAIGHT;
   node->next = NULL;
 
   if (list->head == NULL) {

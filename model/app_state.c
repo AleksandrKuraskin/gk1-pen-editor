@@ -77,3 +77,43 @@ void app_state_destroy(AppState *state) {
   edge_list_destroy(state->edges);
   free(state);
 }
+
+int app_state_insert_vertex(AppState *state, EdgeNode *edge, double x,
+                            double y) {
+  if (state == NULL || state->points == NULL || state->edges == NULL ||
+      edge == NULL) {
+    return 0;
+  }
+
+  Point *point = point_create(x, y);
+  PointNode *point_node = malloc(sizeof(*point_node));
+  EdgeNode *split_edge = malloc(sizeof(*split_edge));
+  if (point == NULL || point_node == NULL || split_edge == NULL) {
+    point_destroy(point);
+    free(point_node);
+    free(split_edge);
+    return 0;
+  }
+
+  split_edge->edge = edge->edge;
+  split_edge->edge.start = point;
+  split_edge->next = edge->next;
+  edge->edge.end = point;
+  edge->next = split_edge;
+  state->edges->count += 1;
+
+  point_node->point = point;
+  point_node->next = NULL;
+  if (state->points->head == NULL) {
+    state->points->head = point_node;
+  } else {
+    PointNode *tail = state->points->head;
+    while (tail->next != NULL) {
+      tail = tail->next;
+    }
+    tail->next = point_node;
+  }
+  state->points->count += 1;
+
+  return 1;
+}
