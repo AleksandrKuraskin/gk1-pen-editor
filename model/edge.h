@@ -12,9 +12,27 @@ typedef enum {
 } EdgeType;
 
 typedef struct {
+  Point control1;
+  Point control2;
+} CubicBezier;
+
+typedef enum {
+  ARC_SIDE_LEFT,
+  ARC_SIDE_RIGHT
+} ArcSide;
+
+typedef struct {
+  ArcSide side;
+} ArcGeometry;
+
+typedef struct {
   Point *start;
   Point *end;
   EdgeType type;
+  union {
+    CubicBezier bezier;
+    ArcGeometry arc;
+  } geometry;
 } Edge;
 
 typedef struct EdgeNode {

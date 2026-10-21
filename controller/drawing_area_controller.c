@@ -123,8 +123,13 @@ static void drawing_area_create_edge_menu(GtkWidget *drawing_area) {
   gtk_widget_set_parent(edge_menu_state.popover, drawing_area);
 
   GtkWidget *menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
   const char *labels[] = {"Straight", "Bezier", "Arc", "Insert vertex"};
   for (int i = 0; i < 4; i++) {
+    if (i == 3) {
+      GtkWidget *separator = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+      gtk_box_append(GTK_BOX(menu_box), separator);
+    }
     GtkWidget *button = gtk_button_new_with_label(labels[i]);
     gtk_widget_set_halign(button, GTK_ALIGN_FILL);
     gtk_box_append(GTK_BOX(menu_box), button);
