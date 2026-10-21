@@ -7,8 +7,7 @@
 
 #include "model/app_state.h"
 
-static DragState drag_state = {
-    .state = NULL, .selected_point = NULL, .dragging = FALSE};
+static DragState drag_state;
 
 typedef struct {
   GtkWidget *drawing_area;
