@@ -4,6 +4,7 @@
 
 #include "config/config.h"
 #include "controller/edge_menu_controller.h"
+#include <stdbool.h>
 
 static DragState drag_state;
 
@@ -37,12 +38,50 @@ Point *drawing_area_find_point_under_cursor(AppState *state, double x,
 
     double dx = point->x - x;
     double dy = point->y - y;
-    if (hypot(dx, dy) <= CONFIG_POINT_RADIUS) {
+    if (hypot(dx, dy) <= CONFIG_POINT_RADIUS + CONFIG_HOVER_OUTLINE_WIDTH) {
       return point;
     }
   }
 
   return NULL;
+}
+
+static EdgeNode *drawing_area_find_edge_under_cursor(AppState *state, double x,
+                                                     double y) {
+  if (state == NULL || state->edges == NULL) {
+    return NULL;
+  }
+
+  double closest_x = x;
+  double closest_y = y;
+  EdgeNode *edge =
+      edge_menu_find_edge_near_cursor(state, x, y, &closest_x, &closest_y);
+  if (edge == NULL) {
+    return NULL;
+  }
+
+  double distance = hypot(x - closest_x, y - closest_y);
+  if (distance <= CONFIG_PICK_TOLERANCE + CONFIG_HOVER_OUTLINE_WIDTH) {
+    return edge;
+  }
+
+  return NULL;
+}
+
+void drawing_area_update_hover_state(AppState *state, double x, double y) {
+  if (state == NULL) {
+    return;
+  }
+
+  state->hover_x = x;
+  state->hover_y = y;
+  state->hovered_point = drawing_area_find_point_under_cursor(state, x, y);
+  if (state->hovered_point != NULL) {
+    state->hovered_edge = NULL;
+    return;
+  }
+
+  state->hovered_edge = drawing_area_find_edge_under_cursor(state, x, y);
 }
 
 static EdgeNode *
@@ -104,15 +143,26 @@ void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state) {
 
 void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
                             double y, gpointer user_data) {
-  (void)controller;
   (void)user_data;
-
-  if (!drag_state.dragging) {
-    return;
-  }
 
   GtkWidget *widget =
       gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller));
+
+  if (drag_state.dragging) {
+    if (drag_state.state != NULL) {
+      drag_state.state->hovered_point = NULL;
+      drag_state.state->hovered_edge = NULL;
+    }
+  } else if (drag_state.state != NULL) {
+    drawing_area_update_hover_state(drag_state.state, x, y);
+  }
+
+  if (!drag_state.dragging) {
+    if (widget != NULL) {
+      gtk_widget_queue_draw(widget);
+    }
+    return;
+  }
 
   if (drag_state.selected_point != NULL) {
     double next_x = x;
@@ -153,6 +203,9 @@ void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
   }
 
   edge_menu_controller_dismiss();
+  state->hovered_point = NULL;
+  state->hovered_edge = NULL;
+
   drag_state.selected_point = drawing_area_find_point_under_cursor(state, x, y);
   if (drag_state.selected_point != NULL) {
     drag_state.dragging = TRUE;
@@ -169,9 +222,11 @@ void drawing_area_release_cb(GtkGestureClick *gesture, int n_press, double x,
                              double y, gpointer user_data) {
   (void)gesture;
   (void)n_press;
-  (void)x;
-  (void)y;
-  (void)user_data;
+
+  AppState *state = user_data;
+  if (state != NULL) {
+    drawing_area_update_hover_state(state, x, y);
+  }
 
   drag_state.dragging = FALSE;
   drag_state.selected_point = NULL;

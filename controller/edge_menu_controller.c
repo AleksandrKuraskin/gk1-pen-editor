@@ -16,9 +16,9 @@ typedef struct {
 
 static EdgeMenuState edge_menu_state;
 
-static EdgeNode *edge_menu_find_edge_near_cursor(AppState *state, double x,
-                                                 double y, double *closest_x,
-                                                 double *closest_y) {
+EdgeNode *edge_menu_find_edge_near_cursor(AppState *state, double x, double y,
+                                          double *closest_x,
+                                          double *closest_y) {
   if (state == NULL || state->edges == NULL) {
     return NULL;
   }

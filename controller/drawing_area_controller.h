@@ -13,6 +13,8 @@ typedef struct {
   gboolean dragging;
 } DragState;
 
+void drawing_area_update_hover_state(AppState *state, double x, double y);
+
 Point *drawing_area_find_point_under_cursor(AppState *state, double x, double y);
 void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state);
 void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,

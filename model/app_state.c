@@ -89,6 +89,10 @@ AppState *app_state_create(void) {
 
   state->points = point_list_create();
   state->edges = edge_list_create();
+  state->hover_x = 0.0;
+  state->hover_y = 0.0;
+  state->hovered_point = NULL;
+  state->hovered_edge = NULL;
   if (state->points == NULL || state->edges == NULL) {
     point_list_destroy(state->points);
     edge_list_destroy(state->edges);

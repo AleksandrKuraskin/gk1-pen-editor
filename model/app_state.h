@@ -7,6 +7,10 @@
 typedef struct {
   PointList *points;
   EdgeList *edges;
+  double hover_x;
+  double hover_y;
+  Point *hovered_point;
+  EdgeNode *hovered_edge;
 } AppState;
 
 AppState *app_state_create(void);
