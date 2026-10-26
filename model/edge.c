@@ -74,6 +74,16 @@ int edge_set_bezier(Edge *edge, Point control1, Point control2) {
   return 1;
 }
 
+int edge_set_arc(Edge *edge, ArcSide side) {
+  if (edge == NULL || edge->start == NULL || edge->end == NULL) {
+    return 0;
+  }
+
+  edge->type = EDGE_TYPE_ARC;
+  edge->geometry.arc.side = side;
+  return 1;
+}
+
 int edge_set_constraint(Edge *edge, EdgeConstraintType constraint_type) {
   if (edge == NULL) {
     return 0;

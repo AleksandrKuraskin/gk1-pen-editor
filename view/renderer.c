@@ -71,6 +71,46 @@ static void renderer_draw_bezier_incremental(PixelBuffer *buffer, Point p0,
   }
 }
 
+static void renderer_draw_arc(cairo_t *cr, Point start, Point end,
+                              ArcSide side) {
+  if (cr == NULL) {
+    return;
+  }
+
+  double dx = end.x - start.x;
+  double dy = end.y - start.y;
+  double chord_length = hypot(dx, dy);
+  if (chord_length <= 0.0) {
+    return;
+  }
+
+  double mid_x = (start.x + end.x) * 0.5;
+  double mid_y = (start.y + end.y) * 0.5;
+  double normal_x = -dy / chord_length;
+  double normal_y = dx / chord_length;
+
+  double radius = chord_length * 0.5;
+  double center_x = mid_x + normal_x * 0.0;
+  double center_y = mid_y + normal_y * 0.0;
+
+  double start_angle = atan2(start.y - center_y, start.x - center_x);
+  double end_angle = atan2(end.y - center_y, end.x - center_x);
+
+  if (side == ARC_SIDE_LEFT) {
+    if (end_angle <= start_angle) {
+      end_angle += 2.0 * M_PI;
+    }
+  } else {
+    if (start_angle <= end_angle) {
+      start_angle += 2.0 * M_PI;
+    }
+  }
+
+  cairo_set_line_width(cr, CONFIG_EDGE_WIDTH);
+  cairo_arc(cr, center_x, center_y, radius, start_angle, end_angle);
+  cairo_stroke(cr);
+}
+
 static void renderer_draw_edge_length_label(cairo_t *cr, const Edge *edge) {
   if (cr == NULL || edge == NULL ||
       edge->constraint_type != EDGE_CONSTRAINT_LENGTH || edge->start == NULL ||
@@ -200,8 +240,19 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
           cairo_fill(cr);
           break;
 
-        case EDGE_TYPE_STRAIGHT:
         case EDGE_TYPE_ARC:
+          renderer_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
+          cairo_set_line_width(cr, CONFIG_EDGE_ANCHOR_LINE_WIDTH);
+          cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
+          cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
+          cairo_stroke(cr);
+
+          renderer_set_source_argb(cr, CONFIG_EDGE_COLOR);
+          renderer_draw_arc(cr, *(node->edge.start), *(node->edge.end),
+                            node->edge.geometry.arc.side);
+          break;
+
+        case EDGE_TYPE_STRAIGHT:
         default:
           renderer_draw_line_bresenham(buffer, node->edge.start->x,
                                        node->edge.start->y, node->edge.end->x,
@@ -239,8 +290,11 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
       cairo_move_to(cr, edge->start->x, edge->start->y);
       cairo_line_to(cr, edge->end->x, edge->end->y);
       break;
-    case EDGE_TYPE_STRAIGHT:
     case EDGE_TYPE_ARC:
+      cairo_move_to(cr, edge->start->x, edge->start->y);
+      cairo_line_to(cr, edge->end->x, edge->end->y);
+      break;
+    case EDGE_TYPE_STRAIGHT:
     default:
       cairo_move_to(cr, edge->start->x, edge->start->y);
       cairo_line_to(cr, edge->end->x, edge->end->y);

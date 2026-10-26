@@ -107,12 +107,38 @@ static void edge_menu_set_bezier_defaults(EdgeNode *edge) {
   edge_set_bezier(&edge->edge, control1, control2);
 }
 
+static void edge_menu_set_arc_defaults(EdgeNode *edge) {
+  if (edge == NULL || edge->edge.start == NULL || edge->edge.end == NULL) {
+    return;
+  }
+
+  double dx = edge->edge.end->x - edge->edge.start->x;
+  double dy = edge->edge.end->y - edge->edge.start->y;
+  if (dx == 0.0 && dy == 0.0) {
+    edge_set_arc(&edge->edge, ARC_SIDE_LEFT);
+    return;
+  }
+
+  double length = hypot(dx, dy);
+  double normal_x = -dy / length;
+  double normal_y = dx / length;
+  if (normal_x == 0.0 && normal_y == 0.0) {
+    edge_set_arc(&edge->edge, ARC_SIDE_LEFT);
+    return;
+  }
+
+  ArcSide side = (dx * normal_x + dy * normal_y) >= 0.0 ? ARC_SIDE_LEFT : ARC_SIDE_RIGHT;
+  edge_set_arc(&edge->edge, side);
+}
+
 static void edge_menu_set_type(GtkButton *button, gpointer user_data) {
   (void)button;
   if (edge_menu_state.edge != NULL) {
     EdgeType type = (EdgeType)GPOINTER_TO_INT(user_data);
     if (type == EDGE_TYPE_BEZIER) {
       edge_menu_set_bezier_defaults(edge_menu_state.edge);
+    } else if (type == EDGE_TYPE_ARC) {
+      edge_menu_set_arc_defaults(edge_menu_state.edge);
     } else {
       edge_menu_state.edge->edge.type = type;
     }
