@@ -25,10 +25,23 @@ typedef struct {
   ArcSide side;
 } ArcGeometry;
 
+typedef enum {
+  EDGE_CONSTRAINT_NONE,
+  EDGE_CONSTRAINT_LENGTH
+} EdgeConstraintType;
+
+typedef struct {
+  double length;
+} LengthConstraint;
+
 typedef struct {
   Point *start;
   Point *end;
   EdgeType type;
+  EdgeConstraintType constraint_type;
+  union {
+    LengthConstraint length;
+  } constraints;
   union {
     CubicBezier bezier;
     ArcGeometry arc;
@@ -49,5 +62,6 @@ EdgeList *edge_list_create(void);
 void edge_list_destroy(EdgeList *list);
 int edge_list_append(EdgeList *list, Point *start, Point *end);
 int edge_set_bezier(Edge *edge, Point control1, Point control2);
+void edge_list_solve_length_constraints(EdgeList *list, Point *fixed_point);
 
 #endif

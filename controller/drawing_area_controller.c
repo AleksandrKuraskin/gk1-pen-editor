@@ -315,6 +315,8 @@ void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
     drawing_area_clamp_to_canvas(widget, &next_x, &next_y);
     drag_state.selected_point->x = next_x;
     drag_state.selected_point->y = next_y;
+    edge_list_solve_length_constraints(drag_state.state->edges,
+                                       drag_state.selected_point);
   } else if (drag_state.selected_bezier_edge != NULL &&
              drag_state.selected_bezier_edge->edge.type == EDGE_TYPE_BEZIER) {
     double next_x = x;

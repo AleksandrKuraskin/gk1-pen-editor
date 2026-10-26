@@ -3,6 +3,7 @@
 #include "config/config.h"
 #include <cairo.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 static void renderer_set_source_argb(cairo_t *cr, uint32_t color) {
@@ -68,6 +69,36 @@ static void renderer_draw_bezier_incremental(PixelBuffer *buffer, Point p0,
     previous_x = x;
     previous_y = y;
   }
+}
+
+static void renderer_draw_edge_length_label(cairo_t *cr, const Edge *edge) {
+  if (cr == NULL || edge == NULL || edge->start == NULL || edge->end == NULL) {
+    return;
+  }
+
+  char label[32];
+  double length = hypot(edge->end->x - edge->start->x,
+                        edge->end->y - edge->start->y);
+  snprintf(label, sizeof(label), "%.1f", length);
+
+  cairo_set_font_size(cr, 12.0);
+  cairo_text_extents_t extents;
+  cairo_text_extents(cr, label, &extents);
+  double x = (edge->start->x + edge->end->x) * 0.5;
+  double y = (edge->start->y + edge->end->y) * 0.5;
+  double padding = 3.0;
+
+  cairo_set_source_rgba(cr, 0.07, 0.07, 0.13, 0.9);
+  cairo_rectangle(cr, x - extents.width * 0.5 - padding,
+                  y - extents.height * 0.5 - padding,
+                  extents.width + padding * 2.0,
+                  extents.height + padding * 2.0);
+  cairo_fill(cr);
+
+  cairo_set_source_rgba(cr, 0.95, 0.95, 0.98, 1.0);
+  cairo_move_to(cr, x - extents.width * 0.5 - extents.x_bearing,
+                y - extents.height * 0.5 - extents.y_bearing);
+  cairo_show_text(cr, label);
 }
 
 void renderer_draw_line_bresenham(PixelBuffer *buffer, double start_x,
@@ -173,6 +204,8 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
                                        node->edge.end->y, CONFIG_EDGE_COLOR);
           break;
         }
+
+        renderer_draw_edge_length_label(cr, &node->edge);
       }
     }
 

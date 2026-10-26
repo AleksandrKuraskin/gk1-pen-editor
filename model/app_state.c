@@ -131,6 +131,12 @@ int app_state_insert_vertex(AppState *state, EdgeNode *edge, double x,
   split_edge->edge = edge->edge;
   split_edge->edge.start = point;
   split_edge->next = edge->next;
+  if (edge->edge.constraint_type == EDGE_CONSTRAINT_LENGTH) {
+    edge->edge.constraints.length.length =
+        hypot(point->x - edge->edge.start->x, point->y - edge->edge.start->y);
+    split_edge->edge.constraints.length.length =
+        hypot(edge->edge.end->x - point->x, edge->edge.end->y - point->y);
+  }
   edge->edge.end = point;
   edge->next = split_edge;
   state->edges->count += 1;
