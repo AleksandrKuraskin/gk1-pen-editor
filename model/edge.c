@@ -46,9 +46,7 @@ int edge_list_append(EdgeList *list, Point *start, Point *end) {
   node->edge.start = start;
   node->edge.end = end;
   node->edge.type = EDGE_TYPE_STRAIGHT;
-  node->edge.constraint_type = EDGE_CONSTRAINT_LENGTH;
-  node->edge.constraints.length.length =
-      hypot(end->x - start->x, end->y - start->y);
+  node->edge.constraint_type = EDGE_CONSTRAINT_NONE;
   node->next = NULL;
 
   if (list->head == NULL) {
@@ -74,6 +72,28 @@ int edge_set_bezier(Edge *edge, Point control1, Point control2) {
   edge->geometry.bezier.control1 = control1;
   edge->geometry.bezier.control2 = control2;
   return 1;
+}
+
+int edge_set_constraint(Edge *edge, EdgeConstraintType constraint_type) {
+  if (edge == NULL) {
+    return 0;
+  }
+
+  switch (constraint_type) {
+  case EDGE_CONSTRAINT_NONE:
+    edge->constraint_type = constraint_type;
+    return 1;
+  case EDGE_CONSTRAINT_LENGTH:
+    if (edge->start == NULL || edge->end == NULL) {
+      return 0;
+    }
+    edge->constraints.length.length =
+        hypot(edge->end->x - edge->start->x, edge->end->y - edge->start->y);
+    edge->constraint_type = constraint_type;
+    return 1;
+  }
+
+  return 0;
 }
 
 static void edge_solve_length_constraint(Edge *edge, Point *fixed_point) {

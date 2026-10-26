@@ -74,6 +74,9 @@ static int app_state_add_sample_polygon(AppState *state) {
   if (!edge_set_bezier(&bezier_edge->edge, control1, control2)) {
     return 0;
   }
+  if (!edge_set_constraint(&bezier_edge->edge, EDGE_CONSTRAINT_LENGTH)) {
+    return 0;
+  }
 
   return 1;
 }

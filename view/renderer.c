@@ -72,7 +72,9 @@ static void renderer_draw_bezier_incremental(PixelBuffer *buffer, Point p0,
 }
 
 static void renderer_draw_edge_length_label(cairo_t *cr, const Edge *edge) {
-  if (cr == NULL || edge == NULL || edge->start == NULL || edge->end == NULL) {
+  if (cr == NULL || edge == NULL ||
+      edge->constraint_type != EDGE_CONSTRAINT_LENGTH || edge->start == NULL ||
+      edge->end == NULL) {
     return;
   }
 
