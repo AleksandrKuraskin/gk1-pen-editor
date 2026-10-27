@@ -168,6 +168,11 @@ void renderer_draw_line_bresenham(PixelBuffer *buffer, double start_x,
     return;
   }
 
+  if (!isfinite(start_x) || !isfinite(start_y) || !isfinite(end_x) ||
+      !isfinite(end_y)) {
+    return;
+  }
+
   int x0 = (int)lround(start_x);
   int y0 = (int)lround(start_y);
   int x1 = (int)lround(end_x);

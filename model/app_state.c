@@ -223,8 +223,8 @@ int app_state_insert_point(AppState *state, EdgeNode *edge, double x,
   edge_remove_all_constraints(edge);
 
   Point *point = point_create(x, y);
-  PointNode *point_node = malloc(sizeof(*point_node));
-  EdgeNode *split_edge = malloc(sizeof(*split_edge));
+  PointNode *point_node = calloc(1, sizeof(*point_node));
+  EdgeNode *split_edge = calloc(1, sizeof(*split_edge));
   if (point == NULL || point_node == NULL || split_edge == NULL) {
     point_destroy(point);
     free(point_node);

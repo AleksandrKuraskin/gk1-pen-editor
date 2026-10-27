@@ -38,7 +38,7 @@ int edge_list_append(EdgeList *list, Point *start, Point *end) {
     return 0;
   }
 
-  EdgeNode *node = malloc(sizeof(*node));
+  EdgeNode *node = calloc(1, sizeof(*node));
   if (node == NULL) {
     return 0;
   }
@@ -46,7 +46,10 @@ int edge_list_append(EdgeList *list, Point *start, Point *end) {
   node->edge.start = start;
   node->edge.end = end;
   node->edge.type = EDGE_TYPE_STRAIGHT;
-  node->edge.constraint_type = EDGE_CONSTRAINT_NONE;
+  node->edge.constraint_mask = EDGE_CONSTRAINT_NONE;
+  node->edge.parallel.target = NULL;
+  node->edge.parallel.group_id = 0;
+  node->edge.parallel.relative_sign = 0;
   node->next = NULL;
 
   if (!point_attach_edge(start, node) || !point_attach_edge(end, node)) {
@@ -254,8 +257,6 @@ static void edge_solve_parallel_constraint(Edge *edge, Point *fixed_point) {
   if ((uintptr_t)edge < (uintptr_t)target) {
     double ux_e = edx / elen;
     double uy_e = edy / elen;
-
-    // Sprowadzamy kierunek targetu do wspolnego ukladu zgodnie z relative_sign
     double ux_t = (tdx / tlen) * sign;
     double uy_t = (tdy / tlen) * sign;
 
