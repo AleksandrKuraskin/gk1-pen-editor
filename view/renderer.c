@@ -1,6 +1,7 @@
 #include "view/renderer.h"
 
 #include "config/config.h"
+#include "model/point.h"
 #include <cairo.h>
 #include <math.h>
 #include <stdio.h>
@@ -237,6 +238,48 @@ static void renderer_draw_edge_constraints_labels(cairo_t *cr,
   cairo_new_path(cr);
 }
 
+static gboolean point_touches_curve(const Point *p) {
+  if (p == NULL)
+    return FALSE;
+  if (p->prev_edge != NULL && (p->prev_edge->edge.type == EDGE_TYPE_BEZIER ||
+                               p->prev_edge->edge.type == EDGE_TYPE_ARC)) {
+    return TRUE;
+  }
+  if (p->next_edge != NULL && (p->next_edge->edge.type == EDGE_TYPE_BEZIER ||
+                               p->next_edge->edge.type == EDGE_TYPE_ARC)) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+static void renderer_draw_point_continuity_label(cairo_t *cr,
+                                                 const Point *point) {
+  if (cr == NULL || point == NULL || !point_touches_curve(point) ||
+      point->continuity == CONTINUITY_G0) {
+    return;
+  }
+
+  const char *label = "";
+  if (point->continuity == CONTINUITY_G1) {
+    label = "G1";
+  } else if (point->continuity == CONTINUITY_C1) {
+    label = "C1";
+  }
+
+  cairo_set_font_size(cr, 11.0);
+  cairo_text_extents_t extents;
+  cairo_text_extents(cr, label, &extents);
+
+  double x = point->x + 8.0;
+  double y = point->y - 8.0;
+
+  renderer_set_source_argb(cr, 0xFF38BDF8);
+  cairo_move_to(cr, x - extents.x_bearing,
+                y - extents.y_bearing - extents.height);
+  cairo_show_text(cr, label);
+  cairo_new_path(cr);
+}
+
 void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
                                 int height, gpointer user_data) {
   (void)area;
@@ -401,6 +444,13 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
   if (state->edges != NULL) {
     for (EdgeNode *node = state->edges->head; node != NULL; node = node->next) {
       renderer_draw_edge_constraints_labels(cr, &node->edge);
+    }
+
+    if (state->points != NULL) {
+      for (PointNode *node = state->points->head; node != NULL;
+           node = node->next) {
+        renderer_draw_point_continuity_label(cr, node->point);
+      }
     }
   }
 }

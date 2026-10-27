@@ -31,6 +31,7 @@ typedef struct {
 typedef struct {
   struct EdgeNode *target;
   int group_id;
+  int relative_sign;
 } ParallelConstraint;
 
 typedef struct {
