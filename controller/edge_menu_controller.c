@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "config/config.h"
+#include "controller/point_menu_controller.h"
 
 typedef struct {
   GtkWidget *drawing_area;
@@ -96,12 +97,16 @@ static void edge_menu_set_bezier_defaults(EdgeNode *edge) {
   double offset = length * 0.28;
 
   Point control1 = {
-      edge->edge.start->x + dx * 0.33 + normal_x * offset,
-      edge->edge.start->y + dy * 0.33 + normal_y * offset,
+      .x = edge->edge.start->x + dx * 0.33 + normal_x * offset,
+      .y = edge->edge.start->y + dy * 0.33 + normal_y * offset,
+      .prev_edge = NULL,
+      .next_edge = NULL,
   };
   Point control2 = {
-      edge->edge.end->x - dx * 0.33 + normal_x * offset,
-      edge->edge.end->y - dy * 0.33 + normal_y * offset,
+      .x = edge->edge.end->x - dx * 0.33 + normal_x * offset,
+      .y = edge->edge.end->y - dy * 0.33 + normal_y * offset,
+      .prev_edge = NULL,
+      .next_edge = NULL,
   };
 
   edge_set_bezier(&edge->edge, control1, control2);
@@ -127,7 +132,8 @@ static void edge_menu_set_arc_defaults(EdgeNode *edge) {
     return;
   }
 
-  ArcSide side = (dx * normal_x + dy * normal_y) >= 0.0 ? ARC_SIDE_LEFT : ARC_SIDE_RIGHT;
+  ArcSide side =
+      (dx * normal_x + dy * normal_y) >= 0.0 ? ARC_SIDE_LEFT : ARC_SIDE_RIGHT;
   edge_set_arc(&edge->edge, side);
 }
 
@@ -166,12 +172,12 @@ static void edge_menu_set_constraint(GtkButton *button, gpointer user_data) {
   edge_menu_close();
 }
 
-static void edge_menu_insert_vertex(GtkButton *button, gpointer user_data) {
+static void edge_menu_insert_point(GtkButton *button, gpointer user_data) {
   (void)button;
   (void)user_data;
   if (edge_menu_state.edge != NULL) {
-    app_state_insert_vertex(edge_menu_state.state, edge_menu_state.edge,
-                            edge_menu_state.insert_x, edge_menu_state.insert_y);
+    app_state_insert_point(edge_menu_state.state, edge_menu_state.edge,
+                           edge_menu_state.insert_x, edge_menu_state.insert_y);
     gtk_widget_queue_draw(edge_menu_state.drawing_area);
   }
   edge_menu_close();
@@ -186,6 +192,10 @@ static void edge_menu_secondary_click_cb(GtkGestureClick *gesture, int n_press,
     return;
   }
 
+  if (point_menu_find_point_near_cursor(state, x, y) != NULL) {
+    return;
+  }
+
   double closest_x = x;
   double closest_y = y;
   EdgeNode *edge =
@@ -195,6 +205,8 @@ static void edge_menu_secondary_click_cb(GtkGestureClick *gesture, int n_press,
     return;
   }
 
+  gtk_widget_set_visible(edge_menu_state.popover, FALSE);
+  gtk_popover_popdown(GTK_POPOVER(edge_menu_state.popover));
   edge_menu_state.state = state;
   edge_menu_state.edge = edge;
   edge_menu_state.insert_x = closest_x;
@@ -217,8 +229,9 @@ static void edge_menu_create(GtkWidget *drawing_area) {
     return;
   }
 
-  gtk_popover_set_autohide(GTK_POPOVER(edge_menu_state.popover), TRUE);
   gtk_widget_set_parent(edge_menu_state.popover, drawing_area);
+
+  gtk_popover_set_autohide(GTK_POPOVER(edge_menu_state.popover), TRUE);
   g_signal_connect(drawing_area, "destroy", G_CALLBACK(edge_menu_destroy),
                    NULL);
 
@@ -265,11 +278,11 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   section_label = gtk_label_new("Add point");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
-  GtkWidget *insert_button = gtk_button_new_with_label("Insert vertex");
+  GtkWidget *insert_button = gtk_button_new_with_label("Insert point");
   gtk_widget_set_halign(insert_button, GTK_ALIGN_FILL);
   gtk_box_append(GTK_BOX(menu_box), insert_button);
-  g_signal_connect(insert_button, "clicked",
-                   G_CALLBACK(edge_menu_insert_vertex), NULL);
+  g_signal_connect(insert_button, "clicked", G_CALLBACK(edge_menu_insert_point),
+                   NULL);
 
   gtk_popover_set_child(GTK_POPOVER(edge_menu_state.popover), menu_box);
 }

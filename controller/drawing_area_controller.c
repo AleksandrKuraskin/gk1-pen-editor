@@ -4,6 +4,7 @@
 
 #include "config/config.h"
 #include "controller/edge_menu_controller.h"
+#include "controller/point_menu_controller.h"
 #include <stdbool.h>
 
 static DragState drag_state;
@@ -125,6 +126,7 @@ void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state) {
   drag_state.selected_bezier_handle = -1;
   drag_state.dragging = FALSE;
   edge_menu_controller_connect(drawing_area, state);
+  point_menu_controller_connect(drawing_area, state);
 
   GtkEventController *motion_controller = gtk_event_controller_motion_new();
   gtk_widget_add_controller(drawing_area, motion_controller);

@@ -2,6 +2,46 @@
 
 #include <stdlib.h>
 
+int point_attach_edge(Point *point, struct EdgeNode *edge) {
+  if (point == NULL || edge == NULL) {
+    return 0;
+  }
+
+  if (point->prev_edge == edge || point->next_edge == edge) {
+    return 1;
+  }
+
+  if (point->prev_edge == NULL) {
+    point->prev_edge = edge;
+    return 1;
+  }
+
+  if (point->next_edge == NULL) {
+    point->next_edge = edge;
+    return 1;
+  }
+
+  return 0;
+}
+
+int point_detach_edge(Point *point, struct EdgeNode *edge) {
+  if (point == NULL || edge == NULL) {
+    return 0;
+  }
+
+  if (point->prev_edge == edge) {
+    point->prev_edge = NULL;
+    return 1;
+  }
+
+  if (point->next_edge == edge) {
+    point->next_edge = NULL;
+    return 1;
+  }
+
+  return 0;
+}
+
 Point *point_create(double x, double y) {
   Point *point = malloc(sizeof(*point));
   if (point == NULL) {
@@ -10,10 +50,18 @@ Point *point_create(double x, double y) {
 
   point->x = x;
   point->y = y;
+  point->prev_edge = NULL;
+  point->next_edge = NULL;
   return point;
 }
 
-void point_destroy(Point *point) { free(point); }
+void point_destroy(Point *point) {
+  if (point == NULL) {
+    return;
+  }
+
+  free(point);
+}
 
 PointList *point_list_create(void) {
   PointList *list = malloc(sizeof(*list));

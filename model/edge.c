@@ -49,6 +49,11 @@ int edge_list_append(EdgeList *list, Point *start, Point *end) {
   node->edge.constraint_type = EDGE_CONSTRAINT_NONE;
   node->next = NULL;
 
+  if (!point_attach_edge(start, node) || !point_attach_edge(end, node)) {
+    free(node);
+    return 0;
+  }
+
   if (list->head == NULL) {
     list->head = node;
   } else {

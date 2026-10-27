@@ -140,6 +140,7 @@ static void renderer_draw_edge_length_label(cairo_t *cr, const Edge *edge) {
   cairo_move_to(cr, x - extents.width * 0.5 - extents.x_bearing,
                 y - extents.height * 0.5 - extents.y_bearing);
   cairo_show_text(cr, label);
+  cairo_new_path(cr);
 }
 
 void renderer_draw_line_bresenham(PixelBuffer *buffer, double start_x,
