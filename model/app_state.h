@@ -12,6 +12,7 @@ typedef struct {
   double hover_y;
   Point *hovered_point;
   EdgeNode *hovered_edge;
+  EdgeNode *pairing_edge;
   gboolean use_bresenham;
   int next_parallel_group_id;
 } AppState;

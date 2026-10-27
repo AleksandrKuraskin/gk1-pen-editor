@@ -93,6 +93,7 @@ AppState *app_state_create(void) {
   state->hover_y = 0.0;
   state->hovered_point = NULL;
   state->hovered_edge = NULL;
+  state->pairing_edge = NULL;
   state->use_bresenham = TRUE;
   state->next_parallel_group_id = 1;
 

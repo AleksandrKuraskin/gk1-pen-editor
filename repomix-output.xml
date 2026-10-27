@@ -486,12 +486,11 @@ static void point_menu_create(GtkWidget *drawing_area) {
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-  GtkWidget *cont_label = gtk_label_new("Klasa ciągłości węzła:");
+  GtkWidget *cont_label = gtk_label_new("Continuity:");
   gtk_widget_set_halign(cont_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), cont_label);
 
-  const char *cont_names[] = {"G0 (kąt ostry)", "G1 (gładki - kierunek)",
-                              "C1 (styczny - wektor)"};
+  const char *cont_names[] = {"G0", "G1", "C1"};
   for (int i = 0; i < 3; i++) {
     GtkWidget *btn = gtk_button_new_with_label(cont_names[i]);
     gtk_widget_set_halign(btn, GTK_ALIGN_FILL);
@@ -521,6 +520,86 @@ void point_menu_controller_connect(GtkWidget *drawing_area, AppState *state) {
 }
 </file>
 
+<file path="view/renderer.h">
+#ifndef POLYPEN_RENDERER_H
+#define POLYPEN_RENDERER_H
+
+#include <gtk/gtk.h>
+#include <stdint.h>
+
+#include "model/app_state.h"
+#include "view/pixel_buffer.h"
+
+void renderer_draw_line_bresenham(PixelBuffer *buffer, double x0, double y0,
+                                  double x1, double y1, uint32_t color);
+void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
+                                int height, gpointer user_data);
+
+#endif
+</file>
+
+<file path=".gitignore">
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+/polypen
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# debug information files
+*.dwo
+
+# build related cache
+.cache/
+</file>
+
 <file path="app/main.c">
 #include <cairo.h>
 #include <gtk/gtk.h>
@@ -544,45 +623,54 @@ static void show_documentation_dialog(GtkButton *btn, gpointer user_data) {
   (void)btn;
   GtkWindow *parent = user_data;
   GtkWidget *dialog = gtk_window_new();
-  gtk_window_set_title(GTK_WINDOW(dialog), "Dokumentacja i Instrukcja Obsługi");
+  gtk_window_set_title(GTK_WINDOW(dialog), "Dokumentacja programu");
   gtk_window_set_transient_for(GTK_WINDOW(dialog), parent);
   gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
-  gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 500);
+  gtk_window_set_default_size(GTK_WINDOW(dialog), 720, 520);
 
   GtkWidget *scrolled = gtk_scrolled_window_new();
   GtkWidget *label = gtk_label_new(
-      "POLYPEN - EDYTOR WIELOKĄTÓW KRZYWOLINIOWYCH\n\n"
-      "1. OBSŁUGA MYSZY I EDYCJA:\n"
-      " - Przeciąganie LPM: przesuwanie wierzchołka lub punktu kontrolnego "
-      "Béziera.\n"
-      " - Przeciąganie z SHIFT + LPM: przesuwanie całego wielokąta.\n"
-      " - Kliknięcie PPM na wierzchołek: menu usuwania wierzchołka i wyboru "
+      "DOKUMENTACJA SYSTEMU POLYPEN\n"
+      "Edytor wielokątów i wielokątów krzywoliniowych\n\n"
+      "1. OBSŁUGA INTERFEJSU I EDYCJA:\n"
+      " - Przeciąganie wierzchołka: LPM na wierzchołek pozwala na zmianę jego "
+      "położenia.\n"
+      " - Przeciąganie krawędzi: kliknięcie i przeciągnięcie krawędzi przesuwa "
+      "cały wielokąt.\n"
+      " - Przeciąganie punktu kontrolnego: zmiana kształtu segmentu Béziera.\n"
+      " - Menu wierzchołka (PPM): usuwanie wierzchołka oraz wybór klasy "
       "ciągłości (G0, G1, C1).\n"
-      " - Kliknięcie PPM na krawędź: menu zmiany typu (odcinek, Bézier, łuk), "
-      "dodania punktu oraz więzów.\n\n"
-      "2. OGRANICZENIA GEOMETRYCZNE (RELACJE):\n"
-      " - Zadana długość krawędzi (domyślnie bieżąca długość z możliwością "
-      "edycji).\n"
-      " - Równoległość dwóch krawędzi (dla osób o nazwisku na literę K).\n"
-      " - Solver więzów działa w pętli relaksacyjnej z wagowym rzutowaniem "
-      "współrzędnych.\n"
-      " - Wstawienie lub usunięcie wierzchołka automatycznie usuwa sprzeczne "
-      "ograniczenia.\n\n"
-      "3. CIĄGŁOŚĆ W WĘZŁACH BÉZIERA:\n"
-      " - G0: wspólna pozycja, niezależne kierunki stycznych.\n"
-      " - G1 (domyślna dla K): współliniowość wektorów stycznych z zachowaniem "
-      "długości uchwytów.\n"
-      " - C1: jednakowe wektory pochodnych (ścisła symetria wektorowa).\n\n"
-      "4. ALGORYTMY RYSOWANIA:\n"
-      " - Wybór algorytmu: radio buttony w pasku nagłówka (Bresenham vs "
-      "Cairo).\n"
-      " - Krzywe Béziera: algorytm przyrostowy w bazie potęgowej z różnicami "
-      "skończonymi (Forward Differences).\n");
+      " - Menu krawędzi (PPM): zmiana typu (odcinek, Bézier, łuk), dodanie "
+      "wierzchołka oraz nakładanie i usuwanie ograniczeń.\n\n"
+      "2. OGRANICZENIA GEOMETRYCZNE:\n"
+      " - Zadana długość krawędzi: utrzymywanie stałej odległości między "
+      "końcami segmentu.\n"
+      " - Równoległość dwóch krawędzi: wymuszenie współliniowości wektorów "
+      "kierunkowych wybranej pary krawędzi.\n"
+      " - Solver ograniczeń: iteracyjny algorytm relaksacyjny korygujący "
+      "położenie wierzchołków z uwzględnieniem punktu aktualnie "
+      "przeciąganego.\n"
+      " - Modyfikacja topologii: wstawienie lub usunięcie wierzchołka usuwa "
+      "powiązane relacje geometryczne.\n\n"
+      "3. KLASY CIĄGŁOŚCI W WĘZŁACH:\n"
+      " - G0: ciągłość położenia (wspólny wierzchołek, niezależne kierunki "
+      "stycznych).\n"
+      " - G1: ciągłość kierunku (jednostkowego wektora stycznego). Punkty "
+      "kontrolne leżą na wspólnej prostej przechodzącej przez wierzchołek.\n"
+      " - C1: ciągłość wektora stycznego (równość wektorów pochodnych, "
+      "symetria uchwytów względem węzła).\n"
+      " - Łuki okręgów: co najwyżej jeden koniec danego łuku może posiadać "
+      "ciągłość G1.\n\n"
+      "4. ALGORYTMY RENDEROWANIA:\n"
+      " - Przełącznik rasteryzacji: wybór pomiędzy własną implementacją "
+      "algorytmu Bresenhama a algorytmem bibliotecznym Cairo.\n"
+      " - Segmenty Béziera: wyznaczanie punktów metodą przyrostową w bazie "
+      "potęgowej z wykorzystaniem różnic skończonych trzeciego rzędu.\n");
   gtk_label_set_wrap(GTK_LABEL(label), TRUE);
-  gtk_widget_set_margin_start(label, 16);
-  gtk_widget_set_margin_end(label, 16);
-  gtk_widget_set_margin_top(label, 16);
-  gtk_widget_set_margin_bottom(label, 16);
+  gtk_widget_set_margin_start(label, 20);
+  gtk_widget_set_margin_end(label, 20);
+  gtk_widget_set_margin_top(label, 20);
+  gtk_widget_set_margin_bottom(label, 20);
 
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), label);
   gtk_window_set_child(GTK_WINDOW(dialog), scrolled);
@@ -652,6 +740,90 @@ int main(int argc, char **argv) {
 
   return status;
 }
+</file>
+
+<file path="config/config.h">
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <stdint.h>
+
+// Application
+#define CONFIG_APP_ID "org.gk.polypen"
+#define CONFIG_APP_NAME "PolyPen"
+
+// Initial window and canvas size, in pixels
+#define CONFIG_WINDOW_WIDTH 1280
+#define CONFIG_WINDOW_HEIGHT 720
+#define CONFIG_CANVAS_WIDTH 10
+#define CONFIG_CANVAS_HEIGHT 10
+
+// Editor interaction sizes, in pixels
+#define CONFIG_POINT_RADIUS 4
+#define CONFIG_CONTROL_POINT_RADIUS 4
+#define CONFIG_PICK_TOLERANCE 8
+
+// Rendering defaults
+#define CONFIG_EDGE_WIDTH 2.0
+#define CONFIG_EDGE_ANCHOR_LINE_WIDTH 1.0
+#define CONFIG_EDGE_GUIDE_LINE_WIDTH 1.5
+#define CONFIG_EDGE_GUIDE_DASH_LENGTH 8.0
+#define CONFIG_EDGE_GUIDE_DASH_GAP 6.0
+#define CONFIG_GRID_SPACING 20
+#define CONFIG_GRID_DOT_RADIUS 1.0
+#define CONFIG_HOVER_OUTLINE_WIDTH 2.0
+#define CONFIG_LENGTH_LABEL_FONT_SIZE 12.0
+#define CONFIG_LENGTH_LABEL_PADDING 3.0
+
+// Canvas and grid colors in ARGB format
+#define CONFIG_CANVAS_BACKGROUND UINT32_C(0xFF111122)
+#define CONFIG_GRID_COLOR UINT32_C(0xFF334155)
+#define CONFIG_EDGE_COLOR UINT32_C(0xFFE2E8F0)
+#define CONFIG_EDGE_ANCHOR_COLOR UINT32_C(0xFF94A3B8)
+#define CONFIG_CONTROL_POINT_COLOR UINT32_C(0xFF94A3B8)
+#define CONFIG_POINT_COLOR UINT32_C(0xFFE2E8F0)
+#define CONFIG_HOVER_COLOR UINT32_C(0xFF7DD3FC)
+#define CONFIG_LABEL_BACKGROUND_COLOR UINT32_C(0xFF121A2B)
+#define CONFIG_LABEL_TEXT_COLOR UINT32_C(0xFFF8FAFC)
+
+// Bezier constraints
+#define CONFIG_BEZIER_MIN_SEGMENTS 8
+#define CONFIG_BEZIER_MAX_SEGMENTS 200
+#define CONFIG_BEZIER_SEGMENT_LENGTH 16.0
+
+#endif
+</file>
+
+<file path="controller/drawing_area_controller.h">
+#ifndef POLYPEN_DRAWING_AREA_CONTROLLER_H
+#define POLYPEN_DRAWING_AREA_CONTROLLER_H
+
+#include <gtk/gtk.h>
+
+#include "model/app_state.h"
+
+typedef struct {
+  AppState *state;
+  Point *selected_point;
+  EdgeNode *selected_bezier_edge;
+  int selected_bezier_handle;
+  EdgeNode *selected_edge;
+  gboolean dragging;
+} DragState;
+
+void drawing_area_update_hover_state(AppState *state, double x, double y);
+
+Point *drawing_area_find_point_under_cursor(AppState *state, double x,
+                                            double y);
+void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state);
+void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
+                            double y, gpointer user_data);
+void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
+                           double y, gpointer user_data);
+void drawing_area_release_cb(GtkGestureClick *gesture, int n_press, double x,
+                             double y, gpointer user_data);
+
+#endif
 </file>
 
 <file path="model/point.c">
@@ -910,170 +1082,6 @@ void point_enforce_continuity(Point *point, struct EdgeNode *driving_edge);
 #endif
 </file>
 
-<file path="view/renderer.h">
-#ifndef POLYPEN_RENDERER_H
-#define POLYPEN_RENDERER_H
-
-#include <gtk/gtk.h>
-#include <stdint.h>
-
-#include "model/app_state.h"
-#include "view/pixel_buffer.h"
-
-void renderer_draw_line_bresenham(PixelBuffer *buffer, double x0, double y0,
-                                  double x1, double y1, uint32_t color);
-void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
-                                int height, gpointer user_data);
-
-#endif
-</file>
-
-<file path=".gitignore">
-# Prerequisites
-*.d
-
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
-
-# Linker output
-*.ilk
-*.map
-*.exp
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-/polypen
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
-*.dwo
-
-# build related cache
-.cache/
-</file>
-
-<file path="config/config.h">
-#ifndef CONFIG_H
-#define CONFIG_H
-
-#include <stdint.h>
-
-// Application
-#define CONFIG_APP_ID "org.gk.polypen"
-#define CONFIG_APP_NAME "PolyPen"
-
-// Initial window and canvas size, in pixels
-#define CONFIG_WINDOW_WIDTH 1280
-#define CONFIG_WINDOW_HEIGHT 720
-#define CONFIG_CANVAS_WIDTH 10
-#define CONFIG_CANVAS_HEIGHT 10
-
-// Editor interaction sizes, in pixels
-#define CONFIG_POINT_RADIUS 4
-#define CONFIG_CONTROL_POINT_RADIUS 4
-#define CONFIG_PICK_TOLERANCE 8
-
-// Rendering defaults
-#define CONFIG_EDGE_WIDTH 2.0
-#define CONFIG_EDGE_ANCHOR_LINE_WIDTH 1.0
-#define CONFIG_EDGE_GUIDE_LINE_WIDTH 1.5
-#define CONFIG_EDGE_GUIDE_DASH_LENGTH 8.0
-#define CONFIG_EDGE_GUIDE_DASH_GAP 6.0
-#define CONFIG_GRID_SPACING 20
-#define CONFIG_GRID_DOT_RADIUS 1.0
-#define CONFIG_HOVER_OUTLINE_WIDTH 2.0
-#define CONFIG_LENGTH_LABEL_FONT_SIZE 12.0
-#define CONFIG_LENGTH_LABEL_PADDING 3.0
-
-// Canvas and grid colors in ARGB format
-#define CONFIG_CANVAS_BACKGROUND UINT32_C(0xFF111122)
-#define CONFIG_GRID_COLOR UINT32_C(0xFF334155)
-#define CONFIG_EDGE_COLOR UINT32_C(0xFFE2E8F0)
-#define CONFIG_EDGE_ANCHOR_COLOR UINT32_C(0xFF94A3B8)
-#define CONFIG_CONTROL_POINT_COLOR UINT32_C(0xFF94A3B8)
-#define CONFIG_POINT_COLOR UINT32_C(0xFFE2E8F0)
-#define CONFIG_HOVER_COLOR UINT32_C(0xFF7DD3FC)
-#define CONFIG_LABEL_BACKGROUND_COLOR UINT32_C(0xFF121A2B)
-#define CONFIG_LABEL_TEXT_COLOR UINT32_C(0xFFF8FAFC)
-
-// Bezier constraints
-#define CONFIG_BEZIER_MIN_SEGMENTS 8
-#define CONFIG_BEZIER_MAX_SEGMENTS 200
-#define CONFIG_BEZIER_SEGMENT_LENGTH 16.0
-
-#endif
-</file>
-
-<file path="controller/drawing_area_controller.h">
-#ifndef POLYPEN_DRAWING_AREA_CONTROLLER_H
-#define POLYPEN_DRAWING_AREA_CONTROLLER_H
-
-#include <gtk/gtk.h>
-
-#include "model/app_state.h"
-
-typedef struct {
-  AppState *state;
-  Point *selected_point;
-  EdgeNode *selected_bezier_edge;
-  int selected_bezier_handle;
-  EdgeNode *selected_edge;
-  gboolean dragging;
-} DragState;
-
-void drawing_area_update_hover_state(AppState *state, double x, double y);
-
-Point *drawing_area_find_point_under_cursor(AppState *state, double x,
-                                            double y);
-void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state);
-void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
-                            double y, gpointer user_data);
-void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
-                           double y, gpointer user_data);
-void drawing_area_release_cb(GtkGestureClick *gesture, int n_press, double x,
-                             double y, gpointer user_data);
-
-#endif
-</file>
-
 <file path="controller/edge_menu_controller.c">
 #include "controller/edge_menu_controller.h"
 
@@ -1266,16 +1274,11 @@ static void edge_menu_remove_length_cb(GtkButton *button, gpointer user_data) {
   edge_menu_close();
 }
 
-static void edge_menu_pair_parallel_cb(GtkButton *button, gpointer user_data) {
+static void edge_menu_start_pairing_cb(GtkButton *button, gpointer user_data) {
   (void)button;
-  EdgeNode *target = (EdgeNode *)user_data;
-  if (edge_menu_state.edge != NULL && target != NULL &&
-      edge_menu_state.state != NULL) {
-    edge_set_parallel_constraint(
-        edge_menu_state.edge, target,
-        edge_menu_state.state->next_parallel_group_id++);
-    edge_list_solve_constraints(edge_menu_state.state->edges,
-                                edge_menu_state.edge->edge.start);
+  (void)user_data;
+  if (edge_menu_state.edge != NULL && edge_menu_state.state != NULL) {
+    edge_menu_state.state->pairing_edge = edge_menu_state.edge;
     gtk_widget_queue_draw(edge_menu_state.drawing_area);
   }
   edge_menu_close();
@@ -1409,26 +1412,12 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
 
-  GtkWidget *parallel_btn = gtk_menu_button_new();
-  gtk_menu_button_set_label(GTK_MENU_BUTTON(parallel_btn), "Pair with edge...");
-  GtkWidget *parallel_pop = gtk_popover_new();
-  GtkWidget *parallel_list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-
-  if (edge_menu_state.state != NULL && edge_menu_state.state->edges != NULL) {
-    int idx = 1;
-    for (EdgeNode *node = edge_menu_state.state->edges->head; node != NULL;
-         node = node->next) {
-      char btn_text[64];
-      snprintf(btn_text, sizeof(btn_text), "Edge #%d", idx++);
-      GtkWidget *p_item = gtk_button_new_with_label(btn_text);
-      g_signal_connect(p_item, "clicked",
-                       G_CALLBACK(edge_menu_pair_parallel_cb), node);
-      gtk_box_append(GTK_BOX(parallel_list_box), p_item);
-    }
-  }
-  gtk_popover_set_child(GTK_POPOVER(parallel_pop), parallel_list_box);
-  gtk_menu_button_set_popover(GTK_MENU_BUTTON(parallel_btn), parallel_pop);
-  gtk_box_append(GTK_BOX(menu_box), parallel_btn);
+  GtkWidget *pair_btn =
+      gtk_button_new_with_label("Pick target edge on canvas...");
+  gtk_widget_set_halign(pair_btn, GTK_ALIGN_FILL);
+  g_signal_connect(pair_btn, "clicked", G_CALLBACK(edge_menu_start_pairing_cb),
+                   NULL);
+  gtk_box_append(GTK_BOX(menu_box), pair_btn);
 
   GtkWidget *remove_par_btn =
       gtk_button_new_with_label("Remove parallel constraint");
@@ -1481,6 +1470,7 @@ typedef struct {
   double hover_y;
   Point *hovered_point;
   EdgeNode *hovered_edge;
+  EdgeNode *pairing_edge;
   gboolean use_bresenham;
   int next_parallel_group_id;
 } AppState;
@@ -1699,13 +1689,10 @@ static void edge_solve_parallel_constraint(Edge *edge, Point *fixed_point) {
   if (target->start == NULL || target->end == NULL)
     return;
 
-  double dx = target->end->x - target->start->x;
-  double dy = target->end->y - target->start->y;
-  double len = hypot(dx, dy);
-  if (len < 1e-7)
-    return;
-  dx /= len;
-  dy /= len;
+  gboolean edge_has_fixed =
+      (edge->start == fixed_point || edge->end == fixed_point);
+  gboolean target_has_fixed =
+      (target->start == fixed_point || target->end == fixed_point);
 
   double edx = edge->end->x - edge->start->x;
   double edy = edge->end->y - edge->start->y;
@@ -1713,24 +1700,80 @@ static void edge_solve_parallel_constraint(Edge *edge, Point *fixed_point) {
   if (elen < 1e-7)
     return;
 
-  if (edx * dx + edy * dy < 0.0) {
-    dx = -dx;
-    dy = -dy;
+  double tdx = target->end->x - target->start->x;
+  double tdy = target->end->y - target->start->y;
+  double tlen = hypot(tdx, tdy);
+  if (tlen < 1e-7)
+    return;
+
+  if (edge_has_fixed && !target_has_fixed) {
+    double dir_x = edx / elen;
+    double dir_y = edy / elen;
+
+    if (tdx * dir_x + tdy * dir_y < 0.0) {
+      dir_x = -dir_x;
+      dir_y = -dir_y;
+    }
+
+    double cx = (target->start->x + target->end->x) * 0.5;
+    double cy = (target->start->y + target->end->y) * 0.5;
+    target->start->x = cx - dir_x * (tlen * 0.5);
+    target->start->y = cy - dir_y * (tlen * 0.5);
+    target->end->x = cx + dir_x * (tlen * 0.5);
+    target->end->y = cy + dir_y * (tlen * 0.5);
+    return;
   }
 
-  if (edge->start == fixed_point && edge->end != fixed_point) {
-    edge->end->x = edge->start->x + dx * elen;
-    edge->end->y = edge->start->y + dy * elen;
-  } else if (edge->end == fixed_point && edge->start != fixed_point) {
-    edge->start->x = edge->end->x - dx * elen;
-    edge->start->y = edge->end->y - dy * elen;
-  } else {
+  if (target_has_fixed && !edge_has_fixed) {
+    double dir_x = tdx / tlen;
+    double dir_y = tdy / tlen;
+
+    if (edx * dir_x + edy * dir_y < 0.0) {
+      dir_x = -dir_x;
+      dir_y = -dir_y;
+    }
+
     double cx = (edge->start->x + edge->end->x) * 0.5;
     double cy = (edge->start->y + edge->end->y) * 0.5;
-    edge->start->x = cx - dx * (elen * 0.5);
-    edge->start->y = cy - dy * (elen * 0.5);
-    edge->end->x = cx + dx * (elen * 0.5);
-    edge->end->y = cy + dy * (elen * 0.5);
+    edge->start->x = cx - dir_x * (elen * 0.5);
+    edge->start->y = cy - dir_y * (elen * 0.5);
+    edge->end->x = cx + dir_x * (elen * 0.5);
+    edge->end->y = cy + dir_y * (elen * 0.5);
+    return;
+  }
+
+  if ((uintptr_t)edge < (uintptr_t)target) {
+    double ux_e = edx / elen;
+    double uy_e = edy / elen;
+    double ux_t = tdx / tlen;
+    double uy_t = tdy / tlen;
+
+    if (ux_e * ux_t + uy_e * uy_t < 0.0) {
+      ux_t = -ux_t;
+      uy_t = -uy_t;
+    }
+
+    double avg_x = (ux_e + ux_t) * 0.5;
+    double avg_y = (uy_e + uy_t) * 0.5;
+    double avg_len = hypot(avg_x, avg_y);
+    if (avg_len < 1e-7)
+      return;
+    avg_x /= avg_len;
+    avg_y /= avg_len;
+
+    double cx_e = (edge->start->x + edge->end->x) * 0.5;
+    double cy_e = (edge->start->y + edge->end->y) * 0.5;
+    edge->start->x = cx_e - avg_x * (elen * 0.5);
+    edge->start->y = cy_e - avg_y * (elen * 0.5);
+    edge->end->x = cx_e + avg_x * (elen * 0.5);
+    edge->end->y = cy_e + avg_y * (elen * 0.5);
+
+    double cx_t = (target->start->x + target->end->x) * 0.5;
+    double cy_t = (target->start->y + target->end->y) * 0.5;
+    target->start->x = cx_t - avg_x * (tlen * 0.5);
+    target->start->y = cy_t - avg_y * (tlen * 0.5);
+    target->end->x = cx_t + avg_x * (tlen * 0.5);
+    target->end->y = cy_t + avg_y * (tlen * 0.5);
   }
 }
 
@@ -1951,6 +1994,7 @@ AppState *app_state_create(void) {
   state->hover_y = 0.0;
   state->hovered_point = NULL;
   state->hovered_edge = NULL;
+  state->pairing_edge = NULL;
   state->use_bresenham = TRUE;
   state->next_parallel_group_id = 1;
 
@@ -2357,10 +2401,10 @@ static void renderer_draw_edge_constraints_labels(cairo_t *cr,
   char label[64] = "";
   if ((edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) &&
       (edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL)) {
-    snprintf(label, sizeof(label), "L:%.1f | || %d", edge->length.length,
+    snprintf(label, sizeof(label), "%.1f | || %d", edge->length.length,
              edge->parallel.group_id);
   } else if (edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) {
-    snprintf(label, sizeof(label), "L:%.1f", edge->length.length);
+    snprintf(label, sizeof(label), "%.1f", edge->length.length);
   } else if (edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL) {
     snprintf(label, sizeof(label), "|| %d", edge->parallel.group_id);
   } else {
@@ -2492,6 +2536,21 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
     }
     cairo_surface_destroy(surface);
     pixel_buffer_destroy(buffer);
+  }
+
+  if (state->pairing_edge != NULL && state->pairing_edge->edge.start != NULL &&
+      state->pairing_edge->edge.end != NULL) {
+    cairo_save(cr);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+    renderer_set_source_argb(cr, 0xFFF59E0B);
+    cairo_set_line_width(cr, CONFIG_EDGE_WIDTH + 4.0);
+
+    Edge *p_edge = &state->pairing_edge->edge;
+    cairo_move_to(cr, p_edge->start->x, p_edge->start->y);
+    cairo_line_to(cr, p_edge->end->x, p_edge->end->y);
+    cairo_stroke(cr);
+    cairo_restore(cr);
   }
 
   if (state->hovered_edge != NULL && state->hovered_edge->edge.start != NULL &&
@@ -2777,10 +2836,17 @@ void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
       }
     }
 
-    point_enforce_continuity(drag_state.selected_point, NULL);
-
     edge_list_solve_constraints(drag_state.state->edges,
                                 drag_state.selected_point);
+
+    if (drag_state.state != NULL && drag_state.state->points != NULL) {
+      for (PointNode *node = drag_state.state->points->head; node != NULL;
+           node = node->next) {
+        if (node->point != NULL && node->point->continuity != CONTINUITY_G0) {
+          point_enforce_continuity(node->point, NULL);
+        }
+      }
+    }
   } else if (drag_state.selected_bezier_edge != NULL &&
              drag_state.selected_bezier_edge->edge.type == EDGE_TYPE_BEZIER) {
     if (drag_state.selected_bezier_handle == 0) {
@@ -2818,6 +2884,31 @@ void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
 
   AppState *state = user_data;
   if (state == NULL) {
+    return;
+  }
+
+  if (state->pairing_edge != NULL) {
+    EdgeNode *clicked_edge = drawing_area_find_edge_under_cursor(state, x, y);
+    if (clicked_edge != NULL && clicked_edge != state->pairing_edge) {
+      edge_set_parallel_constraint(state->pairing_edge, clicked_edge,
+                                   state->next_parallel_group_id++);
+      edge_list_solve_constraints(state->edges, clicked_edge->edge.start);
+
+      if (state->points != NULL) {
+        for (PointNode *node = state->points->head; node != NULL;
+             node = node->next) {
+          if (node->point != NULL && node->point->continuity != CONTINUITY_G0) {
+            point_enforce_continuity(node->point, NULL);
+          }
+        }
+      }
+    }
+    state->pairing_edge = NULL;
+    GtkWidget *widget =
+        gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
+    if (widget != NULL) {
+      gtk_widget_queue_draw(widget);
+    }
     return;
   }
 

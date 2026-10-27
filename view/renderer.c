@@ -209,10 +209,10 @@ static void renderer_draw_edge_constraints_labels(cairo_t *cr,
   char label[64] = "";
   if ((edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) &&
       (edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL)) {
-    snprintf(label, sizeof(label), "L:%.1f | || %d", edge->length.length,
+    snprintf(label, sizeof(label), "%.1f | || %d", edge->length.length,
              edge->parallel.group_id);
   } else if (edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) {
-    snprintf(label, sizeof(label), "L:%.1f", edge->length.length);
+    snprintf(label, sizeof(label), "%.1f", edge->length.length);
   } else if (edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL) {
     snprintf(label, sizeof(label), "|| %d", edge->parallel.group_id);
   } else {
@@ -344,6 +344,21 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
     }
     cairo_surface_destroy(surface);
     pixel_buffer_destroy(buffer);
+  }
+
+  if (state->pairing_edge != NULL && state->pairing_edge->edge.start != NULL &&
+      state->pairing_edge->edge.end != NULL) {
+    cairo_save(cr);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+    renderer_set_source_argb(cr, 0xFFF59E0B);
+    cairo_set_line_width(cr, CONFIG_EDGE_WIDTH + 4.0);
+
+    Edge *p_edge = &state->pairing_edge->edge;
+    cairo_move_to(cr, p_edge->start->x, p_edge->start->y);
+    cairo_line_to(cr, p_edge->end->x, p_edge->end->y);
+    cairo_stroke(cr);
+    cairo_restore(cr);
   }
 
   if (state->hovered_edge != NULL && state->hovered_edge->edge.start != NULL &&

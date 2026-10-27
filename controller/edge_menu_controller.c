@@ -189,16 +189,11 @@ static void edge_menu_remove_length_cb(GtkButton *button, gpointer user_data) {
   edge_menu_close();
 }
 
-static void edge_menu_pair_parallel_cb(GtkButton *button, gpointer user_data) {
+static void edge_menu_start_pairing_cb(GtkButton *button, gpointer user_data) {
   (void)button;
-  EdgeNode *target = (EdgeNode *)user_data;
-  if (edge_menu_state.edge != NULL && target != NULL &&
-      edge_menu_state.state != NULL) {
-    edge_set_parallel_constraint(
-        edge_menu_state.edge, target,
-        edge_menu_state.state->next_parallel_group_id++);
-    edge_list_solve_constraints(edge_menu_state.state->edges,
-                                edge_menu_state.edge->edge.start);
+  (void)user_data;
+  if (edge_menu_state.edge != NULL && edge_menu_state.state != NULL) {
+    edge_menu_state.state->pairing_edge = edge_menu_state.edge;
     gtk_widget_queue_draw(edge_menu_state.drawing_area);
   }
   edge_menu_close();
@@ -332,26 +327,12 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
 
-  GtkWidget *parallel_btn = gtk_menu_button_new();
-  gtk_menu_button_set_label(GTK_MENU_BUTTON(parallel_btn), "Pair with edge...");
-  GtkWidget *parallel_pop = gtk_popover_new();
-  GtkWidget *parallel_list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-
-  if (edge_menu_state.state != NULL && edge_menu_state.state->edges != NULL) {
-    int idx = 1;
-    for (EdgeNode *node = edge_menu_state.state->edges->head; node != NULL;
-         node = node->next) {
-      char btn_text[64];
-      snprintf(btn_text, sizeof(btn_text), "Edge #%d", idx++);
-      GtkWidget *p_item = gtk_button_new_with_label(btn_text);
-      g_signal_connect(p_item, "clicked",
-                       G_CALLBACK(edge_menu_pair_parallel_cb), node);
-      gtk_box_append(GTK_BOX(parallel_list_box), p_item);
-    }
-  }
-  gtk_popover_set_child(GTK_POPOVER(parallel_pop), parallel_list_box);
-  gtk_menu_button_set_popover(GTK_MENU_BUTTON(parallel_btn), parallel_pop);
-  gtk_box_append(GTK_BOX(menu_box), parallel_btn);
+  GtkWidget *pair_btn =
+      gtk_button_new_with_label("Pick target edge on canvas...");
+  gtk_widget_set_halign(pair_btn, GTK_ALIGN_FILL);
+  g_signal_connect(pair_btn, "clicked", G_CALLBACK(edge_menu_start_pairing_cb),
+                   NULL);
+  gtk_box_append(GTK_BOX(menu_box), pair_btn);
 
   GtkWidget *remove_par_btn =
       gtk_button_new_with_label("Remove parallel constraint");

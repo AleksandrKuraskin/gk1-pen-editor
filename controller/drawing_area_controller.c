@@ -286,6 +286,31 @@ void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
     return;
   }
 
+  if (state->pairing_edge != NULL) {
+    EdgeNode *clicked_edge = drawing_area_find_edge_under_cursor(state, x, y);
+    if (clicked_edge != NULL && clicked_edge != state->pairing_edge) {
+      edge_set_parallel_constraint(state->pairing_edge, clicked_edge,
+                                   state->next_parallel_group_id++);
+      edge_list_solve_constraints(state->edges, clicked_edge->edge.start);
+
+      if (state->points != NULL) {
+        for (PointNode *node = state->points->head; node != NULL;
+             node = node->next) {
+          if (node->point != NULL && node->point->continuity != CONTINUITY_G0) {
+            point_enforce_continuity(node->point, NULL);
+          }
+        }
+      }
+    }
+    state->pairing_edge = NULL;
+    GtkWidget *widget =
+        gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
+    if (widget != NULL) {
+      gtk_widget_queue_draw(widget);
+    }
+    return;
+  }
+
   edge_menu_controller_dismiss();
   point_menu_controller_dismiss();
   state->hovered_point = NULL;

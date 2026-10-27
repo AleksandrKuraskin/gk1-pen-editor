@@ -201,13 +201,10 @@ static void edge_solve_parallel_constraint(Edge *edge, Point *fixed_point) {
   if (target->start == NULL || target->end == NULL)
     return;
 
-  double dx = target->end->x - target->start->x;
-  double dy = target->end->y - target->start->y;
-  double len = hypot(dx, dy);
-  if (len < 1e-7)
-    return;
-  dx /= len;
-  dy /= len;
+  gboolean edge_has_fixed =
+      (edge->start == fixed_point || edge->end == fixed_point);
+  gboolean target_has_fixed =
+      (target->start == fixed_point || target->end == fixed_point);
 
   double edx = edge->end->x - edge->start->x;
   double edy = edge->end->y - edge->start->y;
@@ -215,24 +212,80 @@ static void edge_solve_parallel_constraint(Edge *edge, Point *fixed_point) {
   if (elen < 1e-7)
     return;
 
-  if (edx * dx + edy * dy < 0.0) {
-    dx = -dx;
-    dy = -dy;
+  double tdx = target->end->x - target->start->x;
+  double tdy = target->end->y - target->start->y;
+  double tlen = hypot(tdx, tdy);
+  if (tlen < 1e-7)
+    return;
+
+  if (edge_has_fixed && !target_has_fixed) {
+    double dir_x = edx / elen;
+    double dir_y = edy / elen;
+
+    if (tdx * dir_x + tdy * dir_y < 0.0) {
+      dir_x = -dir_x;
+      dir_y = -dir_y;
+    }
+
+    double cx = (target->start->x + target->end->x) * 0.5;
+    double cy = (target->start->y + target->end->y) * 0.5;
+    target->start->x = cx - dir_x * (tlen * 0.5);
+    target->start->y = cy - dir_y * (tlen * 0.5);
+    target->end->x = cx + dir_x * (tlen * 0.5);
+    target->end->y = cy + dir_y * (tlen * 0.5);
+    return;
   }
 
-  if (edge->start == fixed_point && edge->end != fixed_point) {
-    edge->end->x = edge->start->x + dx * elen;
-    edge->end->y = edge->start->y + dy * elen;
-  } else if (edge->end == fixed_point && edge->start != fixed_point) {
-    edge->start->x = edge->end->x - dx * elen;
-    edge->start->y = edge->end->y - dy * elen;
-  } else {
+  if (target_has_fixed && !edge_has_fixed) {
+    double dir_x = tdx / tlen;
+    double dir_y = tdy / tlen;
+
+    if (edx * dir_x + edy * dir_y < 0.0) {
+      dir_x = -dir_x;
+      dir_y = -dir_y;
+    }
+
     double cx = (edge->start->x + edge->end->x) * 0.5;
     double cy = (edge->start->y + edge->end->y) * 0.5;
-    edge->start->x = cx - dx * (elen * 0.5);
-    edge->start->y = cy - dy * (elen * 0.5);
-    edge->end->x = cx + dx * (elen * 0.5);
-    edge->end->y = cy + dy * (elen * 0.5);
+    edge->start->x = cx - dir_x * (elen * 0.5);
+    edge->start->y = cy - dir_y * (elen * 0.5);
+    edge->end->x = cx + dir_x * (elen * 0.5);
+    edge->end->y = cy + dir_y * (elen * 0.5);
+    return;
+  }
+
+  if ((uintptr_t)edge < (uintptr_t)target) {
+    double ux_e = edx / elen;
+    double uy_e = edy / elen;
+    double ux_t = tdx / tlen;
+    double uy_t = tdy / tlen;
+
+    if (ux_e * ux_t + uy_e * uy_t < 0.0) {
+      ux_t = -ux_t;
+      uy_t = -uy_t;
+    }
+
+    double avg_x = (ux_e + ux_t) * 0.5;
+    double avg_y = (uy_e + uy_t) * 0.5;
+    double avg_len = hypot(avg_x, avg_y);
+    if (avg_len < 1e-7)
+      return;
+    avg_x /= avg_len;
+    avg_y /= avg_len;
+
+    double cx_e = (edge->start->x + edge->end->x) * 0.5;
+    double cy_e = (edge->start->y + edge->end->y) * 0.5;
+    edge->start->x = cx_e - avg_x * (elen * 0.5);
+    edge->start->y = cy_e - avg_y * (elen * 0.5);
+    edge->end->x = cx_e + avg_x * (elen * 0.5);
+    edge->end->y = cy_e + avg_y * (elen * 0.5);
+
+    double cx_t = (target->start->x + target->end->x) * 0.5;
+    double cy_t = (target->start->y + target->end->y) * 0.5;
+    target->start->x = cx_t - avg_x * (tlen * 0.5);
+    target->start->y = cy_t - avg_y * (tlen * 0.5);
+    target->end->x = cx_t + avg_x * (tlen * 0.5);
+    target->end->y = cy_t + avg_y * (tlen * 0.5);
   }
 }
 
