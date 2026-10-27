@@ -6,42 +6,41 @@
 #include "model/point.h"
 
 typedef enum {
-  EDGE_TYPE_STRAIGHT,
-  EDGE_TYPE_BEZIER,
-  EDGE_TYPE_ARC
-} EdgeType;
+  EDGE_CONSTRAINT_NONE = 0,
+  EDGE_CONSTRAINT_LENGTH = 1 << 0,
+  EDGE_CONSTRAINT_PARALLEL = 1 << 1
+} EdgeConstraintType;
+
+typedef enum { EDGE_TYPE_STRAIGHT, EDGE_TYPE_BEZIER, EDGE_TYPE_ARC } EdgeType;
 
 typedef struct {
   Point control1;
   Point control2;
 } CubicBezier;
 
-typedef enum {
-  ARC_SIDE_LEFT,
-  ARC_SIDE_RIGHT
-} ArcSide;
+typedef enum { ARC_SIDE_LEFT, ARC_SIDE_RIGHT } ArcSide;
 
 typedef struct {
   ArcSide side;
 } ArcGeometry;
-
-typedef enum {
-  EDGE_CONSTRAINT_NONE,
-  EDGE_CONSTRAINT_LENGTH
-} EdgeConstraintType;
 
 typedef struct {
   double length;
 } LengthConstraint;
 
 typedef struct {
+  struct EdgeNode *target;
+  int group_id;
+} ParallelConstraint;
+
+typedef struct {
   Point *start;
   Point *end;
   EdgeType type;
   EdgeConstraintType constraint_type;
-  union {
-    LengthConstraint length;
-  } constraints;
+  int constraint_mask;
+  LengthConstraint length;
+  ParallelConstraint parallel;
   union {
     CubicBezier bezier;
     ArcGeometry arc;
@@ -63,7 +62,14 @@ void edge_list_destroy(EdgeList *list);
 int edge_list_append(EdgeList *list, Point *start, Point *end);
 int edge_set_bezier(Edge *edge, Point control1, Point control2);
 int edge_set_arc(Edge *edge, ArcSide side);
-int edge_set_constraint(Edge *edge, EdgeConstraintType constraint_type);
-void edge_list_solve_length_constraints(EdgeList *list, Point *fixed_point);
+
+int edge_set_constraint(Edge *edge, int constraint_flag);
+void edge_set_length_constraint(Edge *edge, double target_length);
+void edge_remove_length_constraint(Edge *edge);
+void edge_set_parallel_constraint(EdgeNode *e1, EdgeNode *e2, int group_id);
+void edge_remove_parallel_constraint(EdgeNode *edge_node);
+void edge_remove_all_constraints(EdgeNode *edge_node);
+
+void edge_list_solve_constraints(EdgeList *list, Point *fixed_point);
 
 #endif

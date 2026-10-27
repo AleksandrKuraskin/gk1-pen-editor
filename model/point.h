@@ -1,15 +1,24 @@
 #ifndef POLYPEN_MODEL_POINT_H
 #define POLYPEN_MODEL_POINT_H
 
+#include "glib.h"
 #include <stddef.h>
 
 struct EdgeNode;
+
+typedef enum {
+  CONTINUITY_G0 = 0,
+  CONTINUITY_G1 = 1,
+  CONTINUITY_C1 = 2
+} ContinuityType;
 
 typedef struct {
   double x;
   double y;
   struct EdgeNode *prev_edge;
   struct EdgeNode *next_edge;
+  ContinuityType continuity;
+  gboolean continuity_set_by_user;
 } Point;
 
 typedef struct PointNode {

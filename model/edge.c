@@ -89,30 +89,75 @@ int edge_set_arc(Edge *edge, ArcSide side) {
   return 1;
 }
 
-int edge_set_constraint(Edge *edge, EdgeConstraintType constraint_type) {
-  if (edge == NULL) {
+int edge_set_constraint(Edge *edge, int constraint_flag) {
+  if (edge == NULL)
     return 0;
-  }
-
-  switch (constraint_type) {
-  case EDGE_CONSTRAINT_NONE:
-    edge->constraint_type = constraint_type;
+  if (constraint_flag == EDGE_CONSTRAINT_NONE) {
+    edge->constraint_mask = EDGE_CONSTRAINT_NONE;
+    edge->length.length = 0.0;
     return 1;
-  case EDGE_CONSTRAINT_LENGTH:
-    if (edge->start == NULL || edge->end == NULL) {
+  }
+  if (constraint_flag & EDGE_CONSTRAINT_LENGTH) {
+    if (edge->start == NULL || edge->end == NULL)
       return 0;
-    }
-    edge->constraints.length.length =
+    double cur_len =
         hypot(edge->end->x - edge->start->x, edge->end->y - edge->start->y);
-    edge->constraint_type = constraint_type;
+    edge_set_length_constraint(edge, cur_len);
     return 1;
   }
-
   return 0;
 }
 
+void edge_set_length_constraint(Edge *edge, double length) {
+  if (edge == NULL)
+    return;
+  edge->constraint_mask |= EDGE_CONSTRAINT_LENGTH;
+  edge->length.length = length;
+}
+
+void edge_remove_length_constraint(Edge *edge) {
+  if (edge == NULL)
+    return;
+  edge->constraint_mask &= ~EDGE_CONSTRAINT_LENGTH;
+  edge->length.length = 0.0;
+}
+
+void edge_set_parallel_constraint(EdgeNode *e1, EdgeNode *e2, int group_id) {
+  if (e1 == NULL || e2 == NULL || e1 == e2)
+    return;
+  e1->edge.constraint_mask |= EDGE_CONSTRAINT_PARALLEL;
+  e1->edge.parallel.target = e2;
+  e1->edge.parallel.group_id = group_id;
+
+  e2->edge.constraint_mask |= EDGE_CONSTRAINT_PARALLEL;
+  e2->edge.parallel.target = e1;
+  e2->edge.parallel.group_id = group_id;
+}
+
+void edge_remove_parallel_constraint(EdgeNode *edge_node) {
+  if (edge_node == NULL)
+    return;
+  EdgeNode *target = edge_node->edge.parallel.target;
+  edge_node->edge.constraint_mask &= ~EDGE_CONSTRAINT_PARALLEL;
+  edge_node->edge.parallel.target = NULL;
+  edge_node->edge.parallel.group_id = 0;
+
+  if (target != NULL && target->edge.parallel.target == edge_node) {
+    target->edge.constraint_mask &= ~EDGE_CONSTRAINT_PARALLEL;
+    target->edge.parallel.target = NULL;
+    target->edge.parallel.group_id = 0;
+  }
+}
+
+void edge_remove_all_constraints(EdgeNode *edge_node) {
+  if (edge_node == NULL)
+    return;
+  edge_remove_length_constraint(&edge_node->edge);
+  edge_remove_parallel_constraint(edge_node);
+}
+
 static void edge_solve_length_constraint(Edge *edge, Point *fixed_point) {
-  if (edge == NULL || edge->constraint_type != EDGE_CONSTRAINT_LENGTH ||
+  if (edge == NULL || !(edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) ||
       edge->start == NULL || edge->end == NULL) {
     return;
   }
@@ -120,12 +165,11 @@ static void edge_solve_length_constraint(Edge *edge, Point *fixed_point) {
   double dx = edge->end->x - edge->start->x;
   double dy = edge->end->y - edge->start->y;
   double distance = hypot(dx, dy);
-  double target_length = edge->constraints.length.length;
-  if (target_length < 0.0) {
+  double target = edge->length.length;
+  if (target <= 0.0)
     return;
-  }
 
-  if (distance > 0.0) {
+  if (distance > 1e-7) {
     dx /= distance;
     dy /= distance;
   } else {
@@ -133,78 +177,77 @@ static void edge_solve_length_constraint(Edge *edge, Point *fixed_point) {
     dy = 0.0;
   }
 
-  double start_weight = edge->start == fixed_point ? 0.0 : 1.0;
-  double end_weight = edge->end == fixed_point ? 0.0 : 1.0;
+  double start_weight = (edge->start == fixed_point) ? 0.0 : 1.0;
+  double end_weight = (edge->end == fixed_point) ? 0.0 : 1.0;
   double total_weight = start_weight + end_weight;
-  if (total_weight == 0.0) {
+  if (total_weight <= 0.0)
     return;
-  }
 
-  double correction = (distance - target_length) / total_weight;
+  double correction = (distance - target) / total_weight;
   edge->start->x += start_weight * correction * dx;
   edge->start->y += start_weight * correction * dy;
   edge->end->x -= end_weight * correction * dx;
   edge->end->y -= end_weight * correction * dy;
 }
 
-static double edge_length_constraint_error(const Edge *edge) {
-  if (edge == NULL || edge->constraint_type != EDGE_CONSTRAINT_LENGTH ||
-      edge->start == NULL || edge->end == NULL) {
-    return 0.0;
+static void edge_solve_parallel_constraint(Edge *edge, Point *fixed_point) {
+  if (edge == NULL || !(edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL) ||
+      edge->parallel.target == NULL || edge->start == NULL ||
+      edge->end == NULL) {
+    return;
   }
 
-  double current_length =
-      hypot(edge->end->x - edge->start->x, edge->end->y - edge->start->y);
-  return fabs(current_length - edge->constraints.length.length);
+  Edge *target = &edge->parallel.target->edge;
+  if (target->start == NULL || target->end == NULL)
+    return;
+
+  double dx = target->end->x - target->start->x;
+  double dy = target->end->y - target->start->y;
+  double len = hypot(dx, dy);
+  if (len < 1e-7)
+    return;
+  dx /= len;
+  dy /= len;
+
+  double edx = edge->end->x - edge->start->x;
+  double edy = edge->end->y - edge->start->y;
+  double elen = hypot(edx, edy);
+  if (elen < 1e-7)
+    return;
+
+  if (edx * dx + edy * dy < 0.0) {
+    dx = -dx;
+    dy = -dy;
+  }
+
+  if (edge->start == fixed_point && edge->end != fixed_point) {
+    edge->end->x = edge->start->x + dx * elen;
+    edge->end->y = edge->start->y + dy * elen;
+  } else if (edge->end == fixed_point && edge->start != fixed_point) {
+    edge->start->x = edge->end->x - dx * elen;
+    edge->start->y = edge->end->y - dy * elen;
+  } else {
+    double cx = (edge->start->x + edge->end->x) * 0.5;
+    double cy = (edge->start->y + edge->end->y) * 0.5;
+    edge->start->x = cx - dx * (elen * 0.5);
+    edge->start->y = cy - dy * (elen * 0.5);
+    edge->end->x = cx + dx * (elen * 0.5);
+    edge->end->y = cy + dy * (elen * 0.5);
+  }
 }
 
-void edge_list_solve_length_constraints(EdgeList *list, Point *fixed_point) {
-  if (list == NULL || fixed_point == NULL || list->head == NULL) {
+void edge_list_solve_constraints(EdgeList *list, Point *fixed_point) {
+  if (list == NULL || list->head == NULL)
     return;
-  }
 
-  size_t edge_count = 0;
-  for (EdgeNode *node = list->head; node != NULL; node = node->next) {
-    edge_count += 1;
-  }
-
-  EdgeNode **nodes = malloc(edge_count * sizeof(*nodes));
-  if (nodes == NULL) {
-    return;
-  }
-
-  size_t index = 0;
-  for (EdgeNode *node = list->head; node != NULL; node = node->next) {
-    nodes[index++] = node;
-  }
-
-  size_t max_iterations = edge_count * 4;
-  if (max_iterations < EDGE_CONSTRAINT_SOLVER_MIN_ITERATIONS) {
-    max_iterations = EDGE_CONSTRAINT_SOLVER_MIN_ITERATIONS;
-  }
-  if (max_iterations > EDGE_CONSTRAINT_SOLVER_MAX_ITERATIONS) {
-    max_iterations = EDGE_CONSTRAINT_SOLVER_MAX_ITERATIONS;
-  }
-
-  for (size_t iteration = 0; iteration < max_iterations; iteration++) {
-    for (size_t i = 0; i < edge_count; i++) {
-      edge_solve_length_constraint(&nodes[i]->edge, fixed_point);
-    }
-    for (size_t i = edge_count; i > 0; i--) {
-      edge_solve_length_constraint(&nodes[i - 1]->edge, fixed_point);
-    }
-
-    double maximum_error = 0.0;
-    for (size_t i = 0; i < edge_count; i++) {
-      double error = edge_length_constraint_error(&nodes[i]->edge);
-      if (error > maximum_error) {
-        maximum_error = error;
+  for (int iter = 0; iter < EDGE_CONSTRAINT_SOLVER_MAX_ITERATIONS; iter++) {
+    for (EdgeNode *node = list->head; node != NULL; node = node->next) {
+      if (node->edge.constraint_mask & EDGE_CONSTRAINT_LENGTH) {
+        edge_solve_length_constraint(&node->edge, fixed_point);
+      }
+      if (node->edge.constraint_mask & EDGE_CONSTRAINT_PARALLEL) {
+        edge_solve_parallel_constraint(&node->edge, fixed_point);
       }
     }
-    if (maximum_error <= EDGE_CONSTRAINT_SOLVER_TOLERANCE) {
-      break;
-    }
   }
-
-  free(nodes);
 }

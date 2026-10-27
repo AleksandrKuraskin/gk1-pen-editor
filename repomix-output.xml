@@ -1,0 +1,2809 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+app/
+  main.c
+config/
+  config.h
+controller/
+  drawing_area_controller.c
+  drawing_area_controller.h
+  edge_menu_controller.c
+  edge_menu_controller.h
+  point_menu_controller.c
+  point_menu_controller.h
+model/
+  app_state.c
+  app_state.h
+  edge.c
+  edge.h
+  point.c
+  point.h
+view/
+  pixel_buffer.c
+  pixel_buffer.h
+  renderer.c
+  renderer.h
+.clangd
+.gitignore
+Makefile
+requirements.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="controller/point_menu_controller.c">
+#include "controller/point_menu_controller.h"
+
+#include <math.h>
+
+#include "config/config.h"
+
+typedef struct {
+  GtkWidget *drawing_area;
+  GtkWidget *popover;
+  AppState *state;
+  Point *point;
+} PointMenuState;
+
+static PointMenuState point_menu_state;
+
+static void point_menu_close(void) {
+  if (point_menu_state.popover != NULL) {
+    gtk_popover_popdown(GTK_POPOVER(point_menu_state.popover));
+    gtk_widget_set_visible(point_menu_state.popover, FALSE);
+  }
+  point_menu_state.point = NULL;
+}
+
+void point_menu_controller_dismiss(void) { point_menu_close(); }
+
+static void point_menu_destroy(void) {
+  if (point_menu_state.popover == NULL) {
+    return;
+  }
+
+  gtk_popover_popdown(GTK_POPOVER(point_menu_state.popover));
+  if (gtk_widget_get_parent(point_menu_state.popover) != NULL) {
+    gtk_widget_unparent(point_menu_state.popover);
+  }
+  point_menu_state.popover = NULL;
+}
+
+static void point_menu_remove_cb(GtkButton *button, gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  if (point_menu_state.state == NULL || point_menu_state.point == NULL) {
+    point_menu_close();
+    return;
+  }
+
+  if (!app_state_remove_point(point_menu_state.state, point_menu_state.point)) {
+    point_menu_close();
+    return;
+  }
+
+  gtk_widget_queue_draw(point_menu_state.drawing_area);
+  point_menu_close();
+}
+
+static void point_menu_show(AppState *state, Point *point, double x, double y) {
+  if (state == NULL || point == NULL || point_menu_state.popover == NULL) {
+    return;
+  }
+
+  point_menu_state.state = state;
+  point_menu_state.point = point;
+  GdkRectangle pointing_to = {(int)lround(x), (int)lround(y), 1, 1};
+  gtk_popover_set_pointing_to(GTK_POPOVER(point_menu_state.popover),
+                              &pointing_to);
+  gtk_popover_popup(GTK_POPOVER(point_menu_state.popover));
+}
+
+Point *point_menu_find_point_near_cursor(AppState *state, double x, double y) {
+  if (state == NULL || state->points == NULL) {
+    return NULL;
+  }
+
+  for (PointNode *node = state->points->head; node != NULL; node = node->next) {
+    Point *point = node->point;
+    if (point == NULL) {
+      continue;
+    }
+
+    double dx = point->x - x;
+    double dy = point->y - y;
+    if (hypot(dx, dy) <= CONFIG_POINT_RADIUS + CONFIG_HOVER_OUTLINE_WIDTH) {
+      return point;
+    }
+  }
+
+  return NULL;
+}
+
+static void point_menu_set_continuity_cb(GtkButton *button,
+                                         gpointer user_data) {
+  (void)button;
+  ContinuityType c = (ContinuityType)GPOINTER_TO_INT(user_data);
+  if (point_menu_state.point != NULL) {
+    point_menu_state.point->continuity = c;
+    point_menu_state.point->continuity_set_by_user = TRUE;
+    gtk_widget_queue_draw(point_menu_state.drawing_area);
+  }
+  point_menu_close();
+}
+
+static void point_menu_secondary_click_cb(GtkGestureClick *gesture, int n_press,
+                                          double x, double y,
+                                          gpointer user_data) {
+  (void)n_press;
+  AppState *state = user_data;
+  if (state == NULL || point_menu_state.popover == NULL) {
+    return;
+  }
+
+  Point *point = point_menu_find_point_near_cursor(state, x, y);
+  if (point == NULL) {
+    point_menu_close();
+    return;
+  }
+
+  gtk_widget_set_visible(point_menu_state.popover, FALSE);
+  gtk_popover_popdown(GTK_POPOVER(point_menu_state.popover));
+  point_menu_show(state, point, x, y);
+  (void)gesture;
+}
+
+static void point_menu_create(GtkWidget *drawing_area) {
+  point_menu_state.drawing_area = drawing_area;
+  point_menu_state.popover = gtk_popover_new();
+  if (point_menu_state.popover == NULL) {
+    return;
+  }
+
+  gtk_widget_set_parent(point_menu_state.popover, drawing_area);
+
+  gtk_popover_set_autohide(GTK_POPOVER(point_menu_state.popover), TRUE);
+  g_signal_connect(drawing_area, "destroy", G_CALLBACK(point_menu_destroy),
+                   NULL);
+
+  GtkWidget *menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  GtkWidget *section_label = gtk_label_new("Point");
+  gtk_widget_set_halign(section_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(menu_box), section_label);
+
+  GtkWidget *remove_button = gtk_button_new_with_label("Remove point");
+  gtk_widget_set_halign(remove_button, GTK_ALIGN_FILL);
+  gtk_box_append(GTK_BOX(menu_box), remove_button);
+  g_signal_connect(remove_button, "clicked", G_CALLBACK(point_menu_remove_cb),
+                   NULL);
+
+  gtk_box_append(GTK_BOX(menu_box),
+                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+  gtk_box_append(GTK_BOX(menu_box),
+                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+  GtkWidget *cont_label = gtk_label_new("Klasa ciągłości węzła:");
+  gtk_widget_set_halign(cont_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(menu_box), cont_label);
+
+  const char *cont_names[] = {"G0 (kąt ostry)", "G1 (gładki - kierunek)",
+                              "C1 (styczny - wektor)"};
+  for (int i = 0; i < 3; i++) {
+    GtkWidget *btn = gtk_button_new_with_label(cont_names[i]);
+    gtk_widget_set_halign(btn, GTK_ALIGN_FILL);
+    gtk_box_append(GTK_BOX(menu_box), btn);
+    g_signal_connect(btn, "clicked", G_CALLBACK(point_menu_set_continuity_cb),
+                     GINT_TO_POINTER(i));
+  }
+
+  gtk_popover_set_child(GTK_POPOVER(point_menu_state.popover), menu_box);
+}
+
+void point_menu_controller_connect(GtkWidget *drawing_area, AppState *state) {
+  if (drawing_area == NULL || state == NULL) {
+    return;
+  }
+
+  point_menu_state.state = state;
+  point_menu_create(drawing_area);
+
+  GtkGesture *secondary_click = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(secondary_click),
+                                GDK_BUTTON_SECONDARY);
+  gtk_widget_add_controller(drawing_area,
+                            GTK_EVENT_CONTROLLER(secondary_click));
+  g_signal_connect(secondary_click, "pressed",
+                   G_CALLBACK(point_menu_secondary_click_cb), state);
+}
+</file>
+
+<file path="controller/point_menu_controller.h">
+#ifndef POLYPEN_POINT_MENU_CONTROLLER_H
+#define POLYPEN_POINT_MENU_CONTROLLER_H
+
+#include <gtk/gtk.h>
+
+#include "model/app_state.h"
+
+Point *point_menu_find_point_near_cursor(AppState *state, double x, double y);
+void point_menu_controller_connect(GtkWidget *drawing_area, AppState *state);
+void point_menu_controller_dismiss(void);
+
+#endif
+</file>
+
+<file path="view/pixel_buffer.c">
+#include "view/pixel_buffer.h"
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+PixelBuffer *pixel_buffer_create(int width, int height) {
+  if (width <= 0 || height <= 0 ||
+      (size_t)width > SIZE_MAX / (size_t)height / sizeof(uint32_t)) {
+    return NULL;
+  }
+
+  PixelBuffer *pb = malloc(sizeof(*pb));
+  if (pb == NULL) {
+    return NULL;
+  }
+
+  pb->width = width;
+  pb->height = height;
+  pb->pixels = calloc((size_t)width * (size_t)height, sizeof(*pb->pixels));
+
+  if (pb->pixels == NULL) {
+    free(pb);
+    return NULL;
+  }
+
+  return pb;
+}
+
+void pixel_buffer_destroy(PixelBuffer *pb) {
+  if (pb != NULL) {
+    free(pb->pixels);
+    free(pb);
+  }
+}
+</file>
+
+<file path="view/pixel_buffer.h">
+#ifndef POLYPEN_PIXEL_BUFFER_H
+#define POLYPEN_PIXEL_BUFFER_H
+
+#include <stdint.h>
+
+typedef struct {
+	int width;
+	int height;
+	uint32_t *pixels;
+} PixelBuffer;
+
+PixelBuffer *pixel_buffer_create(int width, int height);
+void pixel_buffer_destroy(PixelBuffer *pb);
+
+#endif
+</file>
+
+<file path=".clangd">
+CompileFlags:
+    Add:
+        - -I..
+        - -Imodel
+        - -I/usr/include/gtk-4.0
+        - -I/usr/include/pango-1.0
+        - -I/usr/include/fribidi
+        - -I/usr/include/harfbuzz
+        - -I/usr/include/gdk-pixbuf-2.0
+        - -I/usr/include/glycin-2
+        - -I/usr/include/cairo
+        - -I/usr/include/freetype2
+        - -I/usr/include/libpng16
+        - -I/home/samba/kuraskina/.local/include
+        - -I/usr/include/pixman-1
+        - -I/usr/include/graphene-1.0
+        - -I/usr/lib/graphene-1.0/include
+        - -I/usr/include/glib-2.0
+        - -I/usr/lib/glib-2.0/include
+        - -I/usr/include/libmount
+        - -I/usr/include/blkid
+        - -I/usr/include/sysprof-6
+        - -pthread
+</file>
+
+<file path="requirements.md">
+# Zadanie 1 – Edytor wielokątów i wielokątów krzywoliniowych
+
+Liczba punktów: 17 (projekt) + 8 (lab)
+
+## Podstawowa specyfikacja
+
+### 1. Obsługa wielokątów
+
+- Możliwość umieszczenia na scenie dowolnej liczby wielokątów (poprzez scenę początkową).
+- Wielokąty mogą posiadać samoprzecięcia.
+- Możliwość edycji dowolnego wielokąta.
+- Możliwość przesuwania całego wielokąta.
+
+Podczas edycji wielokąta należy umożliwić:
+
+- przesuwanie wierzchołka,
+- przesuwanie punktu kontrolnego segmentu Béziera,
+- usuwanie wierzchołka,
+- dodawanie wierzchołka w środku wybranej krawędzi.
+
+Uwaga! Nie jest wymagane tworzenie wielokątów i usuwanie ich przez użytkownika – mogą być one umieszczone na scenie początkowej.
+
+### 2. Ograniczenia (relacje) geometryczne
+
+Dla wybranej krawędzi lub pary wybranych krawędzi (również należących do różnych wielokątów) należy umożliwić definiowanie ograniczeń geometrycznych.
+
+Wymagane rodzaje ograniczeń:
+
+- Zada na długość krawędzi – użytkownik podaje długość krawędzi w oknie edycyjnym. Jako wartość domyślna należy przyjąć jej aktualną długość.
+- Równoległość dwóch krawędzi – dla osób o nazwiskach od A do K.
+- Prostopadłość dwóch krawędzi – dla osób o nazwiskach od L do Z.
+
+Dodatkowo:
+
+- dla jednej krawędzi może być zdefiniowanych kilka różnych ograniczeń;
+- dodanie wierzchołka na krawędzi lub usunięcie wierzchołka powinno powodować usunięcie ograniczeń związanych z tą krawędzią oraz odpowiednią aktualizację relacji krawędzi sąsiednich;
+- aktywne ograniczenia powinny być widoczne na scenie, np. w postaci odpowiednich ikon umieszczonych w pobliżu środka krawędzi;
+- należy umożliwić usuwanie wcześniej zdefiniowanych ograniczeń.
+
+### 3. Segmenty Béziera trzeciego stopnia
+
+Dla każdej krawędzi należy umożliwić przełączanie pomiędzy zwykłym odcinkiem a segmentem Béziera trzeciego stopnia. Po przełączeniu krawędź nie jest już odcinkiem, lecz krzywą.
+
+Po włączeniu trybu Béziera:
+
+- należy wyświetlić wielobok Béziera, np. za pomocą linii przerywanej;
+- należy wyświetlić dwa dodatkowe punkty kontrolne;
+- punkty kontrolne powinny być możliwe do przesuwania za pomocą myszy.
+
+Jeżeli wierzchołek sąsiaduje z segmentem Béziera, należy umożliwić określenie wymaganej ciągłości w tym wierzchołku:
+
+- G0 – ciągłość położenia,
+- G1 – ciągłość kierunku (jednostkowego wektora stycznego),
+- C1 – ciągłość wektora stycznego.
+
+Przełączenie krawędzi z odcinka na segment Béziera powinno automatycznie ustawić domyślną klasę ciągłości w sąsiednich wierzchołkach, chyba że ciągłość została wcześniej jawnie określona przez użytkownika:
+
+- G1 – osoby o nazwiskach od A do K,
+- C1 – osoby o nazwiskach od L do Z.
+
+Podczas przesuwania wierzchołków i punktów kontrolnych należy uwzględniać ustawioną klasę ciągłości. Oznacza to, że zmiana położenia jednego elementu może wymuszać odpowiednią zmianę położenia innych elementów.
+
+### 4. Łuki okręgów
+
+Dla każdej krawędzi należy również umożliwić przełączanie pomiędzy zwykłym odcinkiem a łukiem okręgu.
+
+Jeżeli wierzchołek sąsiaduje z łukiem, należy umożliwić określenie wymaganej ciągłości:
+
+- G0 – ciągłość położenia,
+- G1 – ciągłość kierunku (jednostkowego wektora stycznego).
+
+Dodatkowe wymagania:
+
+- tylko jeden koniec łuku może mieć ustawioną ciągłość G1;
+- jeżeli oba końce łuku mają ciągłość G0, łuk powinien być rysowany z promieniem równym połowie długości krawędzi.
+
+### 5. Algorytmy rysowania
+
+- Rysowanie odcinków – należy umożliwić wybór pomiędzy algorytmem bibliotecznym a własną implementacją algorytmu Bresenhama. Wybór powinien być realizowany za pomocą przycisków typu radio button.
+- Rysowanie segmentu Béziera – należy zastosować algorytm przyrostowy: przejście do bazy potęgowej, a następnie szybki iteracyjny algorytm wyznaczania kolejnych punktów krzywej.
+
+### 6. Obsługa myszy i edycja
+
+Definiowanie nowych wielokątów oraz ich późniejsza edycja powinny być możliwie intuicyjne.
+
+- przesuwanie elementów odbywa się przy użyciu lewego przycisku myszy;
+- przesuwany wierzchołek lub punkt kontrolny powinien zawsze podążać za kursorem myszy;
+- przesuwanie punktu kontrolnego nie powinno, poza wyjątkowymi przypadkami wynikającymi z ustawionych ograniczeń, powodować przesuwania wierzchołków danego segmentu;
+- przesunięcie punktu kontrolnego może natomiast powodować przesunięcie innych wierzchołków lub punktów kontrolnych, jeżeli jest to wymagane przez zdefiniowane ograniczenia i relacje.
+
+### 7. Model danych i architektura
+
+W ramach realizacji zadania należy położyć szczególny nacisk na:
+
+- algorytmy,
+- model danych,
+- architekturę programu,
+- implementację mechanizmu ograniczeń i relacji.
+
+Wygląd interfejsu użytkownika (UI/UX) ma znaczenie drugorzędne. Nie należy poświęcać nadmiernej ilości czasu na dopracowywanie warstwy wizualnej kosztem implementacji wymaganych algorytmów i mechanizmów geometrycznych.
+
+### 8. Scena początkowa
+
+Po uruchomieniu programu powinna automatycznie pojawić się predefiniowana scena demonstracyjna.
+
+Scena powinna zawierać:
+
+- co najmniej dwa wielokąty,
+- zdefiniowane ograniczenia geometryczne,
+- co najmniej jedną krawędź zamienioną na segment Béziera.
+
+Zwiększenie liczby wielokątów w scenie początkowej (za pomocą kodu) – powinno być bardzo proste i czytelne.
+
+Scena początkowa powinna umożliwiać bezpośrednie zaprezentowanie najważniejszych funkcjonalności programu.
+
+### 9. Dokumentacja
+
+Do programu należy przygotować prostą dokumentację, najlepiej dostępną bezpośrednio z poziomu aplikacji.
+
+Dokumentacja powinna zawierać co najmniej:
+
+- instrukcję obsługi, w szczególności opis obsługi myszy oraz „klawiszologię”;
+- opis przyjętych założeń;
+- opis modelu danych;
+- opis zaimplementowanych algorytmów, w szczególności algorytmu obsługi ograniczeń (relacji).
+
+### 10. Termin oddania
+
+Termin oddania zadania: 27–28 października.
+
+W trakcie tych zajęć odbędzie się część laboratoryjna.
+</file>
+
+<file path="app/main.c">
+#include <cairo.h>
+#include <gtk/gtk.h>
+
+#include "config/config.h"
+#include "controller/drawing_area_controller.h"
+#include "glib-object.h"
+#include "model/app_state.h"
+#include "view/renderer.h"
+
+static void on_algo_toggled(GtkCheckButton *radio, gpointer user_data) {
+  AppState *state = user_data;
+  if (gtk_check_button_get_active(radio)) {
+    state->use_bresenham = TRUE;
+  } else {
+    state->use_bresenham = FALSE;
+  }
+}
+
+static void show_documentation_dialog(GtkButton *btn, gpointer user_data) {
+  (void)btn;
+  GtkWindow *parent = user_data;
+  GtkWidget *dialog = gtk_window_new();
+  gtk_window_set_title(GTK_WINDOW(dialog), "Dokumentacja i Instrukcja Obsługi");
+  gtk_window_set_transient_for(GTK_WINDOW(dialog), parent);
+  gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
+  gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 500);
+
+  GtkWidget *scrolled = gtk_scrolled_window_new();
+  GtkWidget *label = gtk_label_new(
+      "POLYPEN - EDYTOR WIELOKĄTÓW KRZYWOLINIOWYCH\n\n"
+      "1. OBSŁUGA MYSZY I EDYCJA:\n"
+      " - Przeciąganie LPM: przesuwanie wierzchołka lub punktu kontrolnego "
+      "Béziera.\n"
+      " - Przeciąganie z SHIFT + LPM: przesuwanie całego wielokąta.\n"
+      " - Kliknięcie PPM na wierzchołek: menu usuwania wierzchołka i wyboru "
+      "ciągłości (G0, G1, C1).\n"
+      " - Kliknięcie PPM na krawędź: menu zmiany typu (odcinek, Bézier, łuk), "
+      "dodania punktu oraz więzów.\n\n"
+      "2. OGRANICZENIA GEOMETRYCZNE (RELACJE):\n"
+      " - Zadana długość krawędzi (domyślnie bieżąca długość z możliwością "
+      "edycji).\n"
+      " - Równoległość dwóch krawędzi (dla osób o nazwisku na literę K).\n"
+      " - Solver więzów działa w pętli relaksacyjnej z wagowym rzutowaniem "
+      "współrzędnych.\n"
+      " - Wstawienie lub usunięcie wierzchołka automatycznie usuwa sprzeczne "
+      "ograniczenia.\n\n"
+      "3. CIĄGŁOŚĆ W WĘZŁACH BÉZIERA:\n"
+      " - G0: wspólna pozycja, niezależne kierunki stycznych.\n"
+      " - G1 (domyślna dla K): współliniowość wektorów stycznych z zachowaniem "
+      "długości uchwytów.\n"
+      " - C1: jednakowe wektory pochodnych (ścisła symetria wektorowa).\n\n"
+      "4. ALGORYTMY RYSOWANIA:\n"
+      " - Wybór algorytmu: radio buttony w pasku nagłówka (Bresenham vs "
+      "Cairo).\n"
+      " - Krzywe Béziera: algorytm przyrostowy w bazie potęgowej z różnicami "
+      "skończonymi (Forward Differences).\n");
+  gtk_label_set_wrap(GTK_LABEL(label), TRUE);
+  gtk_widget_set_margin_start(label, 16);
+  gtk_widget_set_margin_end(label, 16);
+  gtk_widget_set_margin_top(label, 16);
+  gtk_widget_set_margin_bottom(label, 16);
+
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), label);
+  gtk_window_set_child(GTK_WINDOW(dialog), scrolled);
+  gtk_window_present(GTK_WINDOW(dialog));
+}
+
+static void activate(GtkApplication *app, gpointer user_data) {
+  AppState *state = user_data;
+  if (state == NULL)
+    return;
+
+  GtkWidget *window = gtk_application_window_new(app);
+  gtk_window_set_title(GTK_WINDOW(window), CONFIG_APP_NAME);
+  gtk_window_set_default_size(GTK_WINDOW(window), CONFIG_WINDOW_WIDTH,
+                              CONFIG_WINDOW_HEIGHT);
+
+  GtkWidget *header = gtk_header_bar_new();
+  gtk_window_set_titlebar(GTK_WINDOW(window), header);
+
+  GtkWidget *radio_bresenham = gtk_check_button_new_with_label("Bresenham");
+  GtkWidget *radio_cairo =
+      gtk_check_button_new_with_label("Cairo (biblioteczny)");
+  gtk_check_button_set_group(GTK_CHECK_BUTTON(radio_cairo),
+                             GTK_CHECK_BUTTON(radio_bresenham));
+  gtk_check_button_set_active(GTK_CHECK_BUTTON(radio_bresenham), TRUE);
+  g_signal_connect(radio_bresenham, "toggled", G_CALLBACK(on_algo_toggled),
+                   state);
+
+  GtkWidget *algo_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_box_append(GTK_BOX(algo_box), radio_bresenham);
+  gtk_box_append(GTK_BOX(algo_box), radio_cairo);
+  gtk_header_bar_pack_start(GTK_HEADER_BAR(header), algo_box);
+
+  GtkWidget *help_btn = gtk_button_new_with_label("Dokumentacja");
+  g_signal_connect(help_btn, "clicked", G_CALLBACK(show_documentation_dialog),
+                   window);
+  gtk_header_bar_pack_end(GTK_HEADER_BAR(header), help_btn);
+
+  // Obszar rysowania
+  GtkWidget *drawing_area = gtk_drawing_area_new();
+  gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(drawing_area),
+                                     CONFIG_WINDOW_WIDTH);
+  gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(drawing_area),
+                                      CONFIG_WINDOW_HEIGHT);
+  gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(drawing_area),
+                                 renderer_draw_pixel_buffer, state, NULL);
+
+  drawing_area_connect_drag(drawing_area, state);
+  gtk_window_set_child(GTK_WINDOW(window), drawing_area);
+  gtk_window_present(GTK_WINDOW(window));
+}
+
+int main(int argc, char **argv) {
+  AppState *state = app_state_create();
+  if (state == NULL) {
+    return 1;
+  }
+
+  // application declaration
+  GtkApplication *app =
+      gtk_application_new(CONFIG_APP_ID, G_APPLICATION_DEFAULT_FLAGS);
+  g_signal_connect(app, "activate", G_CALLBACK(activate), state);
+
+  // application lifecycle
+  int status = g_application_run(G_APPLICATION(app), argc, argv);
+  g_object_unref(app);
+  app_state_destroy(state);
+
+  return status;
+}
+</file>
+
+<file path="controller/edge_menu_controller.h">
+#ifndef POLYPEN_EDGE_MENU_CONTROLLER_H
+#define POLYPEN_EDGE_MENU_CONTROLLER_H
+
+#include <gtk/gtk.h>
+
+#include "model/app_state.h"
+
+EdgeNode *edge_menu_find_edge_near_cursor(AppState *state, double x, double y,
+                                          double *closest_x,
+                                          double *closest_y);
+void edge_menu_controller_connect(GtkWidget *drawing_area, AppState *state);
+void edge_menu_controller_dismiss(void);
+
+#endif
+</file>
+
+<file path="model/point.c">
+#include "model/point.h"
+
+#include <stdlib.h>
+
+int point_attach_edge(Point *point, struct EdgeNode *edge) {
+  if (point == NULL || edge == NULL) {
+    return 0;
+  }
+
+  if (point->prev_edge == edge || point->next_edge == edge) {
+    return 1;
+  }
+
+  if (point->prev_edge == NULL) {
+    point->prev_edge = edge;
+    return 1;
+  }
+
+  if (point->next_edge == NULL) {
+    point->next_edge = edge;
+    return 1;
+  }
+
+  return 0;
+}
+
+int point_detach_edge(Point *point, struct EdgeNode *edge) {
+  if (point == NULL || edge == NULL) {
+    return 0;
+  }
+
+  if (point->prev_edge == edge) {
+    point->prev_edge = NULL;
+    return 1;
+  }
+
+  if (point->next_edge == edge) {
+    point->next_edge = NULL;
+    return 1;
+  }
+
+  return 0;
+}
+
+Point *point_create(double x, double y) {
+  Point *point = malloc(sizeof(*point));
+  if (point == NULL) {
+    return NULL;
+  }
+
+  point->x = x;
+  point->y = y;
+  point->prev_edge = NULL;
+  point->next_edge = NULL;
+  point->continuity = CONTINUITY_G1;
+  return point;
+}
+
+void point_destroy(Point *point) {
+  if (point == NULL) {
+    return;
+  }
+
+  free(point);
+}
+
+PointList *point_list_create(void) {
+  PointList *list = malloc(sizeof(*list));
+  if (list == NULL) {
+    return NULL;
+  }
+
+  list->head = NULL;
+  list->count = 0;
+  return list;
+}
+
+void point_list_destroy(PointList *list) {
+  if (list == NULL) {
+    return;
+  }
+
+  PointNode *current = list->head;
+  while (current != NULL) {
+    PointNode *next = current->next;
+    point_destroy(current->point);
+    free(current);
+    current = next;
+  }
+
+  free(list);
+}
+
+void point_list_append(PointList *list, Point *point) {
+  if (list == NULL || point == NULL) {
+    return;
+  }
+
+  PointNode *node = malloc(sizeof(*node));
+  if (node == NULL) {
+    return;
+  }
+
+  node->point = point;
+  node->next = NULL;
+
+  if (list->head == NULL) {
+    list->head = node;
+  } else {
+    PointNode *current = list->head;
+    while (current->next != NULL) {
+      current = current->next;
+    }
+    current->next = node;
+  }
+
+  list->count += 1;
+}
+</file>
+
+<file path="model/point.h">
+#ifndef POLYPEN_MODEL_POINT_H
+#define POLYPEN_MODEL_POINT_H
+
+#include "glib.h"
+#include <stddef.h>
+
+struct EdgeNode;
+
+typedef enum {
+  CONTINUITY_G0 = 0,
+  CONTINUITY_G1 = 1,
+  CONTINUITY_C1 = 2
+} ContinuityType;
+
+typedef struct {
+  double x;
+  double y;
+  struct EdgeNode *prev_edge;
+  struct EdgeNode *next_edge;
+  ContinuityType continuity;
+  gboolean continuity_set_by_user;
+} Point;
+
+typedef struct PointNode {
+  Point *point;
+  struct PointNode *next;
+} PointNode;
+
+typedef struct {
+  PointNode *head;
+  size_t count;
+} PointList;
+
+Point *point_create(double x, double y);
+void point_destroy(Point *point);
+int point_attach_edge(Point *point, struct EdgeNode *edge);
+int point_detach_edge(Point *point, struct EdgeNode *edge);
+
+PointList *point_list_create(void);
+void point_list_destroy(PointList *list);
+void point_list_append(PointList *list, Point *point);
+
+#endif
+</file>
+
+<file path="controller/drawing_area_controller.h">
+#ifndef POLYPEN_DRAWING_AREA_CONTROLLER_H
+#define POLYPEN_DRAWING_AREA_CONTROLLER_H
+
+#include <gtk/gtk.h>
+
+#include "model/app_state.h"
+
+typedef struct {
+  AppState *state;
+  Point *selected_point;
+  EdgeNode *selected_bezier_edge;
+  int selected_bezier_handle;
+  EdgeNode *selected_edge;
+  gboolean dragging;
+} DragState;
+
+void drawing_area_update_hover_state(AppState *state, double x, double y);
+
+Point *drawing_area_find_point_under_cursor(AppState *state, double x,
+                                            double y);
+void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state);
+void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
+                            double y, gpointer user_data);
+void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
+                           double y, gpointer user_data);
+void drawing_area_release_cb(GtkGestureClick *gesture, int n_press, double x,
+                             double y, gpointer user_data);
+
+#endif
+</file>
+
+<file path="view/renderer.h">
+#ifndef POLYPEN_RENDERER_H
+#define POLYPEN_RENDERER_H
+
+#include <gtk/gtk.h>
+#include <stdint.h>
+
+#include "model/app_state.h"
+#include "view/pixel_buffer.h"
+
+void renderer_draw_line_bresenham(PixelBuffer *buffer, double x0, double y0,
+                                  double x1, double y1, uint32_t color);
+void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
+                                int height, gpointer user_data);
+
+#endif
+</file>
+
+<file path=".gitignore">
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+/polypen
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# debug information files
+*.dwo
+
+# build related cache
+.cache/
+</file>
+
+<file path="config/config.h">
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <stdint.h>
+
+// Application
+#define CONFIG_APP_ID "org.gk.polypen"
+#define CONFIG_APP_NAME "PolyPen"
+
+// Initial window and canvas size, in pixels
+#define CONFIG_WINDOW_WIDTH 1280
+#define CONFIG_WINDOW_HEIGHT 720
+#define CONFIG_CANVAS_WIDTH 10
+#define CONFIG_CANVAS_HEIGHT 10
+
+// Editor interaction sizes, in pixels
+#define CONFIG_POINT_RADIUS 4
+#define CONFIG_CONTROL_POINT_RADIUS 4
+#define CONFIG_PICK_TOLERANCE 8
+
+// Rendering defaults
+#define CONFIG_EDGE_WIDTH 2.0
+#define CONFIG_EDGE_ANCHOR_LINE_WIDTH 1.0
+#define CONFIG_EDGE_GUIDE_LINE_WIDTH 1.5
+#define CONFIG_EDGE_GUIDE_DASH_LENGTH 8.0
+#define CONFIG_EDGE_GUIDE_DASH_GAP 6.0
+#define CONFIG_GRID_SPACING 20
+#define CONFIG_GRID_DOT_RADIUS 1.0
+#define CONFIG_HOVER_OUTLINE_WIDTH 2.0
+#define CONFIG_LENGTH_LABEL_FONT_SIZE 12.0
+#define CONFIG_LENGTH_LABEL_PADDING 3.0
+
+// Canvas and grid colors in ARGB format
+#define CONFIG_CANVAS_BACKGROUND UINT32_C(0xFF111122)
+#define CONFIG_GRID_COLOR UINT32_C(0xFF334155)
+#define CONFIG_EDGE_COLOR UINT32_C(0xFFE2E8F0)
+#define CONFIG_EDGE_ANCHOR_COLOR UINT32_C(0xFF94A3B8)
+#define CONFIG_CONTROL_POINT_COLOR UINT32_C(0xFF94A3B8)
+#define CONFIG_POINT_COLOR UINT32_C(0xFFE2E8F0)
+#define CONFIG_HOVER_COLOR UINT32_C(0xFF7DD3FC)
+#define CONFIG_LABEL_BACKGROUND_COLOR UINT32_C(0xFF121A2B)
+#define CONFIG_LABEL_TEXT_COLOR UINT32_C(0xFFF8FAFC)
+
+// Bezier constraints
+#define CONFIG_BEZIER_MIN_SEGMENTS 8
+#define CONFIG_BEZIER_MAX_SEGMENTS 200
+#define CONFIG_BEZIER_SEGMENT_LENGTH 16.0
+
+#endif
+</file>
+
+<file path="controller/edge_menu_controller.c">
+#include "controller/edge_menu_controller.h"
+
+#include <math.h>
+
+#include "config/config.h"
+#include "controller/point_menu_controller.h"
+
+typedef struct {
+  GtkWidget *drawing_area;
+  GtkWidget *popover;
+  GtkWidget *length_spin;
+  AppState *state;
+  EdgeNode *edge;
+  double insert_x;
+  double insert_y;
+} EdgeMenuState;
+
+static EdgeMenuState edge_menu_state;
+
+EdgeNode *edge_menu_find_edge_near_cursor(AppState *state, double x, double y,
+                                          double *closest_x,
+                                          double *closest_y) {
+  if (state == NULL || state->edges == NULL) {
+    return NULL;
+  }
+
+  EdgeNode *nearest_edge = NULL;
+  double nearest_distance = CONFIG_PICK_TOLERANCE;
+  for (EdgeNode *node = state->edges->head; node != NULL; node = node->next) {
+    Point *start = node->edge.start;
+    Point *end = node->edge.end;
+    if (start == NULL || end == NULL) {
+      continue;
+    }
+
+    double dx = end->x - start->x;
+    double dy = end->y - start->y;
+    double length_squared = dx * dx + dy * dy;
+    double parameter = 0.0;
+    if (length_squared > 0.0) {
+      parameter = ((x - start->x) * dx + (y - start->y) * dy) / length_squared;
+      parameter = fmax(0.0, fmin(1.0, parameter));
+    }
+
+    double projected_x = start->x + parameter * dx;
+    double projected_y = start->y + parameter * dy;
+    double distance = hypot(x - projected_x, y - projected_y);
+    if (distance <= nearest_distance) {
+      nearest_distance = distance;
+      nearest_edge = node;
+      *closest_x = projected_x;
+      *closest_y = projected_y;
+    }
+  }
+
+  return nearest_edge;
+}
+
+static void edge_menu_close(void) {
+  if (edge_menu_state.popover != NULL) {
+    gtk_popover_popdown(GTK_POPOVER(edge_menu_state.popover));
+    gtk_widget_set_visible(edge_menu_state.popover, FALSE);
+  }
+  edge_menu_state.edge = NULL;
+}
+
+void edge_menu_controller_dismiss(void) { edge_menu_close(); }
+
+static void edge_menu_destroy(void) {
+  if (edge_menu_state.popover == NULL) {
+    return;
+  }
+
+  gtk_popover_popdown(GTK_POPOVER(edge_menu_state.popover));
+  if (gtk_widget_get_parent(edge_menu_state.popover) != NULL) {
+    gtk_widget_unparent(edge_menu_state.popover);
+  }
+  edge_menu_state.popover = NULL;
+}
+
+static void edge_menu_set_bezier_defaults(EdgeNode *edge) {
+  if (edge == NULL || edge->edge.start == NULL || edge->edge.end == NULL) {
+    return;
+  }
+
+  double dx = edge->edge.end->x - edge->edge.start->x;
+  double dy = edge->edge.end->y - edge->edge.start->y;
+  double length = hypot(dx, dy);
+
+  if (length == 0.0) {
+    edge_set_bezier(&edge->edge, *edge->edge.start, *edge->edge.end);
+    return;
+  }
+
+  double normal_x = -dy / length;
+  double normal_y = dx / length;
+  double offset = length * 0.28;
+
+  Point control1 = {
+      .x = edge->edge.start->x + dx * 0.33 + normal_x * offset,
+      .y = edge->edge.start->y + dy * 0.33 + normal_y * offset,
+      .prev_edge = NULL,
+      .next_edge = NULL,
+      .continuity = CONTINUITY_G1,
+      .continuity_set_by_user = FALSE,
+  };
+  Point control2 = {
+      .x = edge->edge.end->x - dx * 0.33 + normal_x * offset,
+      .y = edge->edge.end->y - dy * 0.33 + normal_y * offset,
+      .prev_edge = NULL,
+      .next_edge = NULL,
+      .continuity = CONTINUITY_G1,
+      .continuity_set_by_user = FALSE,
+  };
+
+  edge_set_bezier(&edge->edge, control1, control2);
+}
+
+static void edge_menu_set_arc_defaults(EdgeNode *edge) {
+  if (edge == NULL || edge->edge.start == NULL || edge->edge.end == NULL) {
+    return;
+  }
+
+  double dx = edge->edge.end->x - edge->edge.start->x;
+  double dy = edge->edge.end->y - edge->edge.start->y;
+  if (dx == 0.0 && dy == 0.0) {
+    edge_set_arc(&edge->edge, ARC_SIDE_LEFT);
+    return;
+  }
+
+  double length = hypot(dx, dy);
+  double normal_x = -dy / length;
+  double normal_y = dx / length;
+  if (normal_x == 0.0 && normal_y == 0.0) {
+    edge_set_arc(&edge->edge, ARC_SIDE_LEFT);
+    return;
+  }
+
+  ArcSide side =
+      (dx * normal_x + dy * normal_y) >= 0.0 ? ARC_SIDE_LEFT : ARC_SIDE_RIGHT;
+  edge_set_arc(&edge->edge, side);
+}
+
+static void edge_menu_set_type(GtkButton *button, gpointer user_data) {
+  (void)button;
+  if (edge_menu_state.edge != NULL) {
+    EdgeType type = (EdgeType)GPOINTER_TO_INT(user_data);
+    if (type == EDGE_TYPE_BEZIER) {
+      edge_menu_set_bezier_defaults(edge_menu_state.edge);
+      if (!edge_menu_state.edge->edge.start->continuity_set_by_user) {
+        edge_menu_state.edge->edge.start->continuity = CONTINUITY_G1;
+      }
+      if (!edge_menu_state.edge->edge.end->continuity_set_by_user) {
+        edge_menu_state.edge->edge.end->continuity = CONTINUITY_G1;
+      }
+    } else if (type == EDGE_TYPE_ARC) {
+      edge_menu_set_arc_defaults(edge_menu_state.edge);
+    } else {
+      edge_menu_state.edge->edge.type = type;
+    }
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_apply_length_cb(GtkButton *button, gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  if (edge_menu_state.edge != NULL && edge_menu_state.length_spin != NULL) {
+    double target_len =
+        gtk_spin_button_get_value(GTK_SPIN_BUTTON(edge_menu_state.length_spin));
+    edge_set_length_constraint(&edge_menu_state.edge->edge, target_len);
+    edge_list_solve_constraints(edge_menu_state.state->edges,
+                                edge_menu_state.edge->edge.start);
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_remove_length_cb(GtkButton *button, gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  if (edge_menu_state.edge != NULL) {
+    edge_remove_length_constraint(&edge_menu_state.edge->edge);
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_pair_parallel_cb(GtkButton *button, gpointer user_data) {
+  (void)button;
+  EdgeNode *target = (EdgeNode *)user_data;
+  if (edge_menu_state.edge != NULL && target != NULL &&
+      edge_menu_state.state != NULL) {
+    edge_set_parallel_constraint(
+        edge_menu_state.edge, target,
+        edge_menu_state.state->next_parallel_group_id++);
+    edge_list_solve_constraints(edge_menu_state.state->edges,
+                                edge_menu_state.edge->edge.start);
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_remove_parallel_cb(GtkButton *button,
+                                         gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  if (edge_menu_state.edge != NULL) {
+    edge_remove_parallel_constraint(edge_menu_state.edge);
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_insert_point(GtkButton *button, gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  if (edge_menu_state.edge != NULL && edge_menu_state.state != NULL) {
+    app_state_insert_point(edge_menu_state.state, edge_menu_state.edge,
+                           edge_menu_state.insert_x, edge_menu_state.insert_y);
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_secondary_click_cb(GtkGestureClick *gesture, int n_press,
+                                         double x, double y,
+                                         gpointer user_data) {
+  (void)n_press;
+  (void)gesture;
+  AppState *state = user_data;
+  if (state == NULL || edge_menu_state.popover == NULL) {
+    return;
+  }
+
+  if (point_menu_find_point_near_cursor(state, x, y) != NULL) {
+    return;
+  }
+
+  double closest_x = x;
+  double closest_y = y;
+  EdgeNode *edge =
+      edge_menu_find_edge_near_cursor(state, x, y, &closest_x, &closest_y);
+  if (edge == NULL) {
+    edge_menu_close();
+    return;
+  }
+
+  gtk_widget_set_visible(edge_menu_state.popover, FALSE);
+  gtk_popover_popdown(GTK_POPOVER(edge_menu_state.popover));
+  edge_menu_state.state = state;
+  edge_menu_state.edge = edge;
+  edge_menu_state.insert_x = closest_x;
+  edge_menu_state.insert_y = closest_y;
+
+  if (edge->edge.start != NULL && edge->edge.end != NULL &&
+      edge_menu_state.length_spin != NULL) {
+    double current_len = hypot(edge->edge.end->x - edge->edge.start->x,
+                               edge->edge.end->y - edge->edge.start->y);
+    if (edge->edge.constraint_mask & EDGE_CONSTRAINT_LENGTH) {
+      current_len = edge->edge.length.length;
+    }
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(edge_menu_state.length_spin),
+                              current_len);
+  }
+
+  GdkRectangle pointing_to = {(int)lround(x), (int)lround(y), 1, 1};
+  gtk_popover_set_pointing_to(GTK_POPOVER(edge_menu_state.popover),
+                              &pointing_to);
+  gtk_popover_popup(GTK_POPOVER(edge_menu_state.popover));
+}
+
+static void edge_menu_create(GtkWidget *drawing_area) {
+  edge_menu_state.drawing_area = drawing_area;
+  edge_menu_state.popover = gtk_popover_new();
+  if (edge_menu_state.popover == NULL) {
+    return;
+  }
+
+  gtk_widget_set_parent(edge_menu_state.popover, drawing_area);
+  gtk_popover_set_autohide(GTK_POPOVER(edge_menu_state.popover), TRUE);
+  g_signal_connect(drawing_area, "destroy", G_CALLBACK(edge_menu_destroy),
+                   NULL);
+
+  GtkWidget *menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+
+  GtkWidget *section_label = gtk_label_new("Typ krawędzi:");
+  gtk_widget_set_halign(section_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(menu_box), section_label);
+
+  const char *type_labels[] = {"Odcinek prosty", "Krzywa Béziera",
+                               "Łuk okręgu"};
+  for (int i = 0; i < 3; i++) {
+    GtkWidget *button = gtk_button_new_with_label(type_labels[i]);
+    gtk_widget_set_halign(button, GTK_ALIGN_FILL);
+    gtk_box_append(GTK_BOX(menu_box), button);
+    g_signal_connect(button, "clicked", G_CALLBACK(edge_menu_set_type),
+                     GINT_TO_POINTER(i));
+  }
+
+  gtk_box_append(GTK_BOX(menu_box),
+                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+  section_label = gtk_label_new("Zadana długość krawędzi:");
+  gtk_widget_set_halign(section_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(menu_box), section_label);
+
+  GtkWidget *spin_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  edge_menu_state.length_spin =
+      gtk_spin_button_new_with_range(10.0, 2000.0, 5.0);
+  gtk_widget_set_hexpand(edge_menu_state.length_spin, TRUE);
+  gtk_box_append(GTK_BOX(spin_box), edge_menu_state.length_spin);
+
+  GtkWidget *apply_len_btn = gtk_button_new_with_label("Ustaw");
+  g_signal_connect(apply_len_btn, "clicked",
+                   G_CALLBACK(edge_menu_apply_length_cb), NULL);
+  gtk_box_append(GTK_BOX(spin_box), apply_len_btn);
+  gtk_box_append(GTK_BOX(menu_box), spin_box);
+
+  GtkWidget *remove_len_btn =
+      gtk_button_new_with_label("Usuń ograniczenie długości");
+  g_signal_connect(remove_len_btn, "clicked",
+                   G_CALLBACK(edge_menu_remove_length_cb), NULL);
+  gtk_box_append(GTK_BOX(menu_box), remove_len_btn);
+
+  gtk_box_append(GTK_BOX(menu_box),
+                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+  section_label = gtk_label_new("Równoległość (litera K):");
+  gtk_widget_set_halign(section_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(menu_box), section_label);
+
+  GtkWidget *parallel_btn = gtk_menu_button_new();
+  gtk_menu_button_set_label(GTK_MENU_BUTTON(parallel_btn),
+                            "Połącz równolegle z...");
+  GtkWidget *parallel_pop = gtk_popover_new();
+  GtkWidget *parallel_list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+
+  if (edge_menu_state.state != NULL && edge_menu_state.state->edges != NULL) {
+    int idx = 1;
+    for (EdgeNode *node = edge_menu_state.state->edges->head; node != NULL;
+         node = node->next) {
+      char btn_text[64];
+      snprintf(btn_text, sizeof(btn_text), "Krawędź #%d", idx++);
+      GtkWidget *p_item = gtk_button_new_with_label(btn_text);
+      g_signal_connect(p_item, "clicked",
+                       G_CALLBACK(edge_menu_pair_parallel_cb), node);
+      gtk_box_append(GTK_BOX(parallel_list_box), p_item);
+    }
+  }
+  gtk_popover_set_child(GTK_POPOVER(parallel_pop), parallel_list_box);
+  gtk_menu_button_set_popover(GTK_MENU_BUTTON(parallel_btn), parallel_pop);
+  gtk_box_append(GTK_BOX(menu_box), parallel_btn);
+
+  GtkWidget *remove_par_btn = gtk_button_new_with_label("Usuń równoległość");
+  g_signal_connect(remove_par_btn, "clicked",
+                   G_CALLBACK(edge_menu_remove_parallel_cb), NULL);
+  gtk_box_append(GTK_BOX(menu_box), remove_par_btn);
+
+  gtk_box_append(GTK_BOX(menu_box),
+                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+  GtkWidget *insert_button =
+      gtk_button_new_with_label("Wstaw wierzchołek w tym punkcie");
+  gtk_widget_set_halign(insert_button, GTK_ALIGN_FILL);
+  gtk_box_append(GTK_BOX(menu_box), insert_button);
+  g_signal_connect(insert_button, "clicked", G_CALLBACK(edge_menu_insert_point),
+                   NULL);
+
+  gtk_popover_set_child(GTK_POPOVER(edge_menu_state.popover), menu_box);
+}
+
+void edge_menu_controller_connect(GtkWidget *drawing_area, AppState *state) {
+  if (drawing_area == NULL || state == NULL) {
+    return;
+  }
+
+  edge_menu_state.state = state;
+  edge_menu_create(drawing_area);
+
+  GtkGesture *secondary_click = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(secondary_click),
+                                GDK_BUTTON_SECONDARY);
+  gtk_widget_add_controller(drawing_area,
+                            GTK_EVENT_CONTROLLER(secondary_click));
+  g_signal_connect(secondary_click, "pressed",
+                   G_CALLBACK(edge_menu_secondary_click_cb), state);
+}
+</file>
+
+<file path="model/app_state.h">
+#ifndef POLYPEN_APP_STATE_H
+#define POLYPEN_APP_STATE_H
+
+#include "model/edge.h"
+#include "model/point.h"
+#include <glib.h>
+
+typedef struct {
+  PointList *points;
+  EdgeList *edges;
+  double hover_x;
+  double hover_y;
+  Point *hovered_point;
+  EdgeNode *hovered_edge;
+  gboolean use_bresenham;
+  int next_parallel_group_id;
+} AppState;
+
+AppState *app_state_create(void);
+void app_state_destroy(AppState *state);
+void app_state_link_point_edges(AppState *state);
+void app_state_disconnect_point_edges(AppState *state, Point *point);
+int app_state_insert_point(AppState *state, EdgeNode *edge, double x, double y);
+int app_state_remove_point(AppState *state, Point *point);
+
+#endif
+</file>
+
+<file path="model/edge.c">
+#include "model/edge.h"
+
+#include <math.h>
+#include <stdlib.h>
+
+#define EDGE_CONSTRAINT_SOLVER_TOLERANCE 0.01
+#define EDGE_CONSTRAINT_SOLVER_MIN_ITERATIONS 16
+#define EDGE_CONSTRAINT_SOLVER_MAX_ITERATIONS 256
+
+EdgeList *edge_list_create(void) {
+  EdgeList *list = malloc(sizeof(*list));
+  if (list == NULL) {
+    return NULL;
+  }
+
+  list->head = NULL;
+  list->count = 0;
+  return list;
+}
+
+void edge_list_destroy(EdgeList *list) {
+  if (list == NULL) {
+    return;
+  }
+
+  EdgeNode *current = list->head;
+  while (current != NULL) {
+    EdgeNode *next = current->next;
+    free(current);
+    current = next;
+  }
+
+  free(list);
+}
+
+int edge_list_append(EdgeList *list, Point *start, Point *end) {
+  if (list == NULL || start == NULL || end == NULL) {
+    return 0;
+  }
+
+  EdgeNode *node = malloc(sizeof(*node));
+  if (node == NULL) {
+    return 0;
+  }
+
+  node->edge.start = start;
+  node->edge.end = end;
+  node->edge.type = EDGE_TYPE_STRAIGHT;
+  node->edge.constraint_type = EDGE_CONSTRAINT_NONE;
+  node->next = NULL;
+
+  if (!point_attach_edge(start, node) || !point_attach_edge(end, node)) {
+    free(node);
+    return 0;
+  }
+
+  if (list->head == NULL) {
+    list->head = node;
+  } else {
+    EdgeNode *current = list->head;
+    while (current->next != NULL) {
+      current = current->next;
+    }
+    current->next = node;
+  }
+
+  list->count += 1;
+  return 1;
+}
+
+int edge_set_bezier(Edge *edge, Point control1, Point control2) {
+  if (edge == NULL) {
+    return 0;
+  }
+
+  edge->type = EDGE_TYPE_BEZIER;
+  edge->geometry.bezier.control1 = control1;
+  edge->geometry.bezier.control2 = control2;
+  return 1;
+}
+
+int edge_set_arc(Edge *edge, ArcSide side) {
+  if (edge == NULL || edge->start == NULL || edge->end == NULL) {
+    return 0;
+  }
+
+  edge->type = EDGE_TYPE_ARC;
+  edge->geometry.arc.side = side;
+  return 1;
+}
+
+int edge_set_constraint(Edge *edge, int constraint_flag) {
+  if (edge == NULL)
+    return 0;
+  if (constraint_flag == EDGE_CONSTRAINT_NONE) {
+    edge->constraint_mask = EDGE_CONSTRAINT_NONE;
+    edge->length.length = 0.0;
+    return 1;
+  }
+  if (constraint_flag & EDGE_CONSTRAINT_LENGTH) {
+    if (edge->start == NULL || edge->end == NULL)
+      return 0;
+    double cur_len =
+        hypot(edge->end->x - edge->start->x, edge->end->y - edge->start->y);
+    edge_set_length_constraint(edge, cur_len);
+    return 1;
+  }
+  return 0;
+}
+
+void edge_set_length_constraint(Edge *edge, double length) {
+  if (edge == NULL)
+    return;
+  edge->constraint_mask |= EDGE_CONSTRAINT_LENGTH;
+  edge->length.length = length;
+}
+
+void edge_remove_length_constraint(Edge *edge) {
+  if (edge == NULL)
+    return;
+  edge->constraint_mask &= ~EDGE_CONSTRAINT_LENGTH;
+  edge->length.length = 0.0;
+}
+
+void edge_set_parallel_constraint(EdgeNode *e1, EdgeNode *e2, int group_id) {
+  if (e1 == NULL || e2 == NULL || e1 == e2)
+    return;
+  e1->edge.constraint_mask |= EDGE_CONSTRAINT_PARALLEL;
+  e1->edge.parallel.target = e2;
+  e1->edge.parallel.group_id = group_id;
+
+  e2->edge.constraint_mask |= EDGE_CONSTRAINT_PARALLEL;
+  e2->edge.parallel.target = e1;
+  e2->edge.parallel.group_id = group_id;
+}
+
+void edge_remove_parallel_constraint(EdgeNode *edge_node) {
+  if (edge_node == NULL)
+    return;
+  EdgeNode *target = edge_node->edge.parallel.target;
+  edge_node->edge.constraint_mask &= ~EDGE_CONSTRAINT_PARALLEL;
+  edge_node->edge.parallel.target = NULL;
+  edge_node->edge.parallel.group_id = 0;
+
+  if (target != NULL && target->edge.parallel.target == edge_node) {
+    target->edge.constraint_mask &= ~EDGE_CONSTRAINT_PARALLEL;
+    target->edge.parallel.target = NULL;
+    target->edge.parallel.group_id = 0;
+  }
+}
+
+void edge_remove_all_constraints(EdgeNode *edge_node) {
+  if (edge_node == NULL)
+    return;
+  edge_remove_length_constraint(&edge_node->edge);
+  edge_remove_parallel_constraint(edge_node);
+}
+
+static void edge_solve_length_constraint(Edge *edge, Point *fixed_point) {
+  if (edge == NULL || !(edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) ||
+      edge->start == NULL || edge->end == NULL) {
+    return;
+  }
+
+  double dx = edge->end->x - edge->start->x;
+  double dy = edge->end->y - edge->start->y;
+  double distance = hypot(dx, dy);
+  double target = edge->length.length;
+  if (target <= 0.0)
+    return;
+
+  if (distance > 1e-7) {
+    dx /= distance;
+    dy /= distance;
+  } else {
+    dx = 1.0;
+    dy = 0.0;
+  }
+
+  double start_weight = (edge->start == fixed_point) ? 0.0 : 1.0;
+  double end_weight = (edge->end == fixed_point) ? 0.0 : 1.0;
+  double total_weight = start_weight + end_weight;
+  if (total_weight <= 0.0)
+    return;
+
+  double correction = (distance - target) / total_weight;
+  edge->start->x += start_weight * correction * dx;
+  edge->start->y += start_weight * correction * dy;
+  edge->end->x -= end_weight * correction * dx;
+  edge->end->y -= end_weight * correction * dy;
+}
+
+static void edge_solve_parallel_constraint(Edge *edge, Point *fixed_point) {
+  if (edge == NULL || !(edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL) ||
+      edge->parallel.target == NULL || edge->start == NULL ||
+      edge->end == NULL) {
+    return;
+  }
+
+  Edge *target = &edge->parallel.target->edge;
+  if (target->start == NULL || target->end == NULL)
+    return;
+
+  double dx = target->end->x - target->start->x;
+  double dy = target->end->y - target->start->y;
+  double len = hypot(dx, dy);
+  if (len < 1e-7)
+    return;
+  dx /= len;
+  dy /= len;
+
+  double edx = edge->end->x - edge->start->x;
+  double edy = edge->end->y - edge->start->y;
+  double elen = hypot(edx, edy);
+  if (elen < 1e-7)
+    return;
+
+  if (edx * dx + edy * dy < 0.0) {
+    dx = -dx;
+    dy = -dy;
+  }
+
+  if (edge->start == fixed_point && edge->end != fixed_point) {
+    edge->end->x = edge->start->x + dx * elen;
+    edge->end->y = edge->start->y + dy * elen;
+  } else if (edge->end == fixed_point && edge->start != fixed_point) {
+    edge->start->x = edge->end->x - dx * elen;
+    edge->start->y = edge->end->y - dy * elen;
+  } else {
+    double cx = (edge->start->x + edge->end->x) * 0.5;
+    double cy = (edge->start->y + edge->end->y) * 0.5;
+    edge->start->x = cx - dx * (elen * 0.5);
+    edge->start->y = cy - dy * (elen * 0.5);
+    edge->end->x = cx + dx * (elen * 0.5);
+    edge->end->y = cy + dy * (elen * 0.5);
+  }
+}
+
+void edge_list_solve_constraints(EdgeList *list, Point *fixed_point) {
+  if (list == NULL || list->head == NULL)
+    return;
+
+  for (int iter = 0; iter < EDGE_CONSTRAINT_SOLVER_MAX_ITERATIONS; iter++) {
+    for (EdgeNode *node = list->head; node != NULL; node = node->next) {
+      if (node->edge.constraint_mask & EDGE_CONSTRAINT_LENGTH) {
+        edge_solve_length_constraint(&node->edge, fixed_point);
+      }
+      if (node->edge.constraint_mask & EDGE_CONSTRAINT_PARALLEL) {
+        edge_solve_parallel_constraint(&node->edge, fixed_point);
+      }
+    }
+  }
+}
+</file>
+
+<file path="model/edge.h">
+#ifndef POLYPEN_MODEL_EDGE_H
+#define POLYPEN_MODEL_EDGE_H
+
+#include <stddef.h>
+
+#include "model/point.h"
+
+typedef enum {
+  EDGE_CONSTRAINT_NONE = 0,
+  EDGE_CONSTRAINT_LENGTH = 1 << 0,
+  EDGE_CONSTRAINT_PARALLEL = 1 << 1
+} EdgeConstraintType;
+
+typedef enum { EDGE_TYPE_STRAIGHT, EDGE_TYPE_BEZIER, EDGE_TYPE_ARC } EdgeType;
+
+typedef struct {
+  Point control1;
+  Point control2;
+} CubicBezier;
+
+typedef enum { ARC_SIDE_LEFT, ARC_SIDE_RIGHT } ArcSide;
+
+typedef struct {
+  ArcSide side;
+} ArcGeometry;
+
+typedef struct {
+  double length;
+} LengthConstraint;
+
+typedef struct {
+  struct EdgeNode *target;
+  int group_id;
+} ParallelConstraint;
+
+typedef struct {
+  Point *start;
+  Point *end;
+  EdgeType type;
+  EdgeConstraintType constraint_type;
+  int constraint_mask;
+  LengthConstraint length;
+  ParallelConstraint parallel;
+  union {
+    CubicBezier bezier;
+    ArcGeometry arc;
+  } geometry;
+} Edge;
+
+typedef struct EdgeNode {
+  Edge edge;
+  struct EdgeNode *next;
+} EdgeNode;
+
+typedef struct {
+  EdgeNode *head;
+  size_t count;
+} EdgeList;
+
+EdgeList *edge_list_create(void);
+void edge_list_destroy(EdgeList *list);
+int edge_list_append(EdgeList *list, Point *start, Point *end);
+int edge_set_bezier(Edge *edge, Point control1, Point control2);
+int edge_set_arc(Edge *edge, ArcSide side);
+
+int edge_set_constraint(Edge *edge, int constraint_flag);
+void edge_set_length_constraint(Edge *edge, double target_length);
+void edge_remove_length_constraint(Edge *edge);
+void edge_set_parallel_constraint(EdgeNode *e1, EdgeNode *e2, int group_id);
+void edge_remove_parallel_constraint(EdgeNode *edge_node);
+void edge_remove_all_constraints(EdgeNode *edge_node);
+
+void edge_list_solve_constraints(EdgeList *list, Point *fixed_point);
+
+#endif
+</file>
+
+<file path="model/app_state.c">
+#include "model/app_state.h"
+
+#include "edge.h"
+#include <math.h>
+#include <stdlib.h>
+
+static Point *app_state_add_point(AppState *state, double x, double y) {
+  Point *point = point_create(x, y);
+  if (point == NULL)
+    return NULL;
+
+  size_t previous_count = state->points->count;
+  point_list_append(state->points, point);
+  if (state->points->count == previous_count) {
+    point_destroy(point);
+    return NULL;
+  }
+
+  return point;
+}
+
+static EdgeNode *app_state_add_edge_and_get(AppState *state, Point *start,
+                                            Point *end) {
+  if (!edge_list_append(state->edges, start, end))
+    return NULL;
+  EdgeNode *node = state->edges->head;
+  while (node->next != NULL)
+    node = node->next;
+  return node;
+}
+
+static int app_state_init_scene(AppState *state) {
+  static const double poly1[5][2] = {
+      {200, 150}, {460, 150}, {560, 320}, {400, 480}, {180, 380}};
+  Point *pts1[5];
+  for (int i = 0; i < 5; i++) {
+    pts1[i] = app_state_add_point(state, poly1[i][0], poly1[i][1]);
+    if (!pts1[i])
+      return 0;
+  }
+  EdgeNode *edges1[5];
+  for (int i = 0; i < 5; i++) {
+    edges1[i] = app_state_add_edge_and_get(state, pts1[i], pts1[(i + 1) % 5]);
+    if (!edges1[i])
+      return 0;
+  }
+
+  Point c1 = {.x = 280,
+              .y = 80,
+              .prev_edge = NULL,
+              .next_edge = NULL,
+              .continuity = CONTINUITY_G1};
+  Point c2 = {.x = 380,
+              .y = 80,
+              .prev_edge = NULL,
+              .next_edge = NULL,
+              .continuity = CONTINUITY_G1};
+  edge_set_bezier(&edges1[0]->edge, c1, c2);
+
+  edge_set_length_constraint(&edges1[1]->edge, hypot(pts1[2]->x - pts1[1]->x,
+                                                     pts1[2]->y - pts1[1]->y));
+
+  static const double poly2[4][2] = {
+      {750, 180}, {1000, 180}, {950, 420}, {700, 380}};
+  Point *pts2[4];
+  for (int i = 0; i < 4; i++) {
+    pts2[i] = app_state_add_point(state, poly2[i][0], poly2[i][1]);
+    if (!pts2[i])
+      return 0;
+  }
+  EdgeNode *edges2[4];
+  for (int i = 0; i < 4; i++) {
+    edges2[i] = app_state_add_edge_and_get(state, pts2[i], pts2[(i + 1) % 4]);
+    if (!edges2[i])
+      return 0;
+  }
+  state->next_parallel_group_id = 1;
+  edge_set_parallel_constraint(edges1[3], edges2[0],
+                               state->next_parallel_group_id++);
+
+  app_state_link_point_edges(state);
+  return 1;
+}
+
+AppState *app_state_create(void) {
+  AppState *state = malloc(sizeof(*state));
+  if (state == NULL)
+    return NULL;
+
+  state->points = point_list_create();
+  state->edges = edge_list_create();
+  state->hover_x = 0.0;
+  state->hover_y = 0.0;
+  state->hovered_point = NULL;
+  state->hovered_edge = NULL;
+  state->use_bresenham = TRUE;
+  state->next_parallel_group_id = 1;
+
+  if (state->points == NULL || state->edges == NULL) {
+    point_list_destroy(state->points);
+    edge_list_destroy(state->edges);
+    free(state);
+    return NULL;
+  }
+
+  if (!app_state_init_scene(state)) {
+    app_state_destroy(state);
+    return NULL;
+  }
+
+  return state;
+}
+
+void app_state_destroy(AppState *state) {
+  if (state == NULL)
+    return;
+  point_list_destroy(state->points);
+  edge_list_destroy(state->edges);
+  free(state);
+}
+
+void app_state_link_point_edges(AppState *state) {
+  if (state == NULL || state->edges == NULL)
+    return;
+  for (EdgeNode *edge = state->edges->head; edge != NULL; edge = edge->next) {
+    if (edge->edge.start != NULL)
+      point_attach_edge(edge->edge.start, edge);
+    if (edge->edge.end != NULL)
+      point_attach_edge(edge->edge.end, edge);
+  }
+}
+
+void app_state_disconnect_point_edges(AppState *state, Point *point) {
+  if (state == NULL || point == NULL) {
+    return;
+  }
+
+  EdgeNode *prev_edge = point->prev_edge;
+  EdgeNode *next_edge = point->next_edge;
+  if (prev_edge == NULL || next_edge == NULL || prev_edge == next_edge) {
+    return;
+  }
+
+  Point *prev_point = prev_edge->edge.start == point ? prev_edge->edge.end
+                                                     : prev_edge->edge.start;
+  Point *next_point = next_edge->edge.start == point ? next_edge->edge.end
+                                                     : next_edge->edge.start;
+  if (prev_point == NULL || next_point == NULL) {
+    return;
+  }
+
+  if (prev_edge->edge.start == point) {
+    prev_edge->edge.start = next_point;
+  } else {
+    prev_edge->edge.end = next_point;
+  }
+
+  point_detach_edge(prev_point, prev_edge);
+  point_detach_edge(next_point, next_edge);
+  point_detach_edge(point, prev_edge);
+  point_detach_edge(point, next_edge);
+
+  EdgeNode *previous = NULL;
+  for (EdgeNode *current = state->edges->head; current != NULL;
+       current = current->next) {
+    if (current == next_edge) {
+      if (previous == NULL) {
+        state->edges->head = current->next;
+      } else {
+        previous->next = current->next;
+      }
+      free(current);
+      state->edges->count -= 1;
+      break;
+    }
+    previous = current;
+  }
+
+  point_attach_edge(prev_point, prev_edge);
+  point_attach_edge(next_point, prev_edge);
+}
+
+int app_state_remove_point(AppState *state, Point *point) {
+  if (state == NULL || state->points == NULL || point == NULL)
+    return 0;
+
+  EdgeNode *prev_edge = point->prev_edge;
+  EdgeNode *next_edge = point->next_edge;
+  if (prev_edge == NULL || next_edge == NULL || prev_edge == next_edge)
+    return 0;
+
+  edge_remove_all_constraints(prev_edge);
+  edge_remove_all_constraints(next_edge);
+
+  app_state_disconnect_point_edges(state, point);
+
+  PointNode *previous = NULL;
+  for (PointNode *cur = state->points->head; cur != NULL; cur = cur->next) {
+    if (cur->point == point) {
+      if (previous == NULL)
+        state->points->head = cur->next;
+      else
+        previous->next = cur->next;
+      point_destroy(point);
+      free(cur);
+      state->points->count -= 1;
+      return 1;
+    }
+    previous = cur;
+  }
+
+  return 0;
+}
+
+int app_state_insert_point(AppState *state, EdgeNode *edge, double x,
+                           double y) {
+  if (state == NULL || state->points == NULL || state->edges == NULL ||
+      edge == NULL) {
+    return 0;
+  }
+
+  edge_remove_all_constraints(edge);
+
+  Point *point = point_create(x, y);
+  PointNode *point_node = malloc(sizeof(*point_node));
+  EdgeNode *split_edge = malloc(sizeof(*split_edge));
+  if (point == NULL || point_node == NULL || split_edge == NULL) {
+    point_destroy(point);
+    free(point_node);
+    free(split_edge);
+    return 0;
+  }
+
+  Point *old_start = edge->edge.start;
+  Point *old_end = edge->edge.end;
+
+  split_edge->edge = edge->edge;
+  split_edge->edge.start = point;
+  split_edge->edge.end = old_end;
+  split_edge->edge.constraint_mask = EDGE_CONSTRAINT_NONE;
+  split_edge->edge.parallel.target = NULL;
+  split_edge->edge.parallel.group_id = 0;
+  split_edge->next = edge->next;
+
+  edge->edge.end = point;
+
+  if (old_start != NULL) {
+    if (old_start->prev_edge == edge)
+      old_start->prev_edge = NULL;
+    else if (old_start->next_edge == edge)
+      old_start->next_edge = NULL;
+    old_start->next_edge = edge;
+  }
+
+  if (old_end != NULL) {
+    if (old_end->prev_edge == edge)
+      old_end->prev_edge = NULL;
+    else if (old_end->next_edge == edge)
+      old_end->next_edge = NULL;
+    old_end->prev_edge = split_edge;
+  }
+
+  point->prev_edge = edge;
+  point->next_edge = split_edge;
+
+  point_attach_edge(old_start, edge);
+  point_attach_edge(point, edge);
+  point_attach_edge(point, split_edge);
+  point_attach_edge(old_end, split_edge);
+
+  edge->next = split_edge;
+  state->edges->count += 1;
+
+  point_node->point = point;
+  point_node->next = NULL;
+  if (state->points->head == NULL) {
+    state->points->head = point_node;
+  } else {
+    PointNode *tail = state->points->head;
+    while (tail->next != NULL)
+      tail = tail->next;
+    tail->next = point_node;
+  }
+  state->points->count += 1;
+
+  return 1;
+}
+</file>
+
+<file path="Makefile">
+CC ?= gcc
+CFLAGS ?= -Wall -Wextra -O2 -I. $(shell pkg-config --cflags gtk4)
+LDFLAGS ?= $(shell pkg-config --libs gtk4) -lm
+
+TARGET = polypen
+SRCS = app/main.c controller/drawing_area_controller.c controller/edge_menu_controller.c controller/point_menu_controller.c model/app_state.c model/edge.c model/point.c view/pixel_buffer.c view/renderer.c
+OBJS = $(SRCS:.c=.o)
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJS) $(TARGET)
+
+run: $(TARGET)
+	./$(TARGET)
+
+.PHONY: all clean run
+</file>
+
+<file path="view/renderer.c">
+#include "view/renderer.h"
+
+#include "config/config.h"
+#include <cairo.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+static void renderer_set_source_argb(cairo_t *cr, uint32_t color) {
+  double alpha = ((color >> 24) & 0xFF) / 255.0;
+  double red = ((color >> 16) & 0xFF) / 255.0;
+  double green = ((color >> 8) & 0xFF) / 255.0;
+  double blue = (color & 0xFF) / 255.0;
+
+  cairo_set_source_rgba(cr, red, green, blue, alpha);
+}
+
+static void renderer_draw_background(cairo_t *cr, int width, int height) {
+  renderer_set_source_argb(cr, CONFIG_CANVAS_BACKGROUND);
+  cairo_paint(cr);
+
+  renderer_set_source_argb(cr, CONFIG_GRID_COLOR);
+  for (int y = CONFIG_GRID_SPACING / 2; y < height; y += CONFIG_GRID_SPACING) {
+    for (int x = CONFIG_GRID_SPACING / 2; x < width; x += CONFIG_GRID_SPACING) {
+      cairo_move_to(cr, x, y);
+      cairo_arc(cr, x, y, CONFIG_GRID_DOT_RADIUS, 0, 2 * G_PI);
+    }
+  }
+  cairo_fill(cr);
+}
+
+static int renderer_bezier_segment_count(Point p0, Point p1, Point p2,
+                                         Point p3) {
+  double polygon_length = hypot(p1.x - p0.x, p1.y - p0.y) +
+                          hypot(p2.x - p1.x, p2.y - p1.y) +
+                          hypot(p3.x - p2.x, p3.y - p2.y);
+
+  if (polygon_length <= 0.0) {
+    return CONFIG_BEZIER_MIN_SEGMENTS;
+  }
+
+  int segments = (int)ceil(polygon_length / CONFIG_BEZIER_SEGMENT_LENGTH);
+  if (segments < CONFIG_BEZIER_MIN_SEGMENTS) {
+    segments = CONFIG_BEZIER_MIN_SEGMENTS;
+  }
+  if (segments > CONFIG_BEZIER_MAX_SEGMENTS) {
+    segments = CONFIG_BEZIER_MAX_SEGMENTS;
+  }
+
+  return segments;
+}
+
+static void renderer_draw_bezier_incremental(PixelBuffer *buffer, cairo_t *cr,
+                                             Point p0, Point p1, Point p2,
+                                             Point p3, uint32_t color,
+                                             gboolean use_bresenham) {
+  int segments = renderer_bezier_segment_count(p0, p1, p2, p3);
+  if (segments <= 0)
+    return;
+
+  double h = 1.0 / (double)segments;
+  double h2 = h * h;
+  double h3 = h2 * h;
+
+  double ax = -p0.x + 3.0 * p1.x - 3.0 * p2.x + p3.x;
+  double ay = -p0.y + 3.0 * p1.y - 3.0 * p2.y + p3.y;
+
+  double bx = 3.0 * p0.x - 6.0 * p1.x + 3.0 * p2.x;
+  double by = 3.0 * p0.y - 6.0 * p1.y + 3.0 * p2.y;
+
+  double cx = -3.0 * p0.x + 3.0 * p1.x;
+  double cy = -3.0 * p0.y + 3.0 * p1.y;
+
+  double dx = p0.x;
+  double dy = p0.y;
+
+  double x = dx;
+  double y = dy;
+
+  double delta_x = ax * h3 + bx * h2 + cx * h;
+  double delta_y = ay * h3 + by * h2 + cy * h;
+
+  double delta2_x = 6.0 * ax * h3 + 2.0 * bx * h2;
+  double delta2_y = 6.0 * ay * h3 + 2.0 * by * h2;
+
+  double delta3_x = 6.0 * ax * h3;
+  double delta3_y = 6.0 * ay * h3;
+
+  double prev_x = x;
+  double prev_y = y;
+
+  if (!use_bresenham) {
+    cairo_save(cr);
+    renderer_set_source_argb(cr, color);
+    cairo_set_line_width(cr, CONFIG_EDGE_WIDTH);
+    cairo_move_to(cr, prev_x, prev_y);
+  }
+
+  for (int i = 0; i < segments; i++) {
+    x += delta_x;
+    y += delta_y;
+    delta_x += delta2_x;
+    delta_y += delta2_y;
+    delta2_x += delta3_x;
+    delta2_y += delta3_y;
+
+    if (use_bresenham && buffer != NULL) {
+      renderer_draw_line_bresenham(buffer, prev_x, prev_y, x, y, color);
+    } else if (!use_bresenham) {
+      cairo_line_to(cr, x, y);
+    }
+    prev_x = x;
+    prev_y = y;
+  }
+
+  if (!use_bresenham) {
+    cairo_stroke(cr);
+    cairo_restore(cr);
+  }
+}
+
+static void renderer_draw_arc(cairo_t *cr, Point start, Point end,
+                              ArcSide side) {
+  if (cr == NULL) {
+    return;
+  }
+
+  double dx = end.x - start.x;
+  double dy = end.y - start.y;
+  double chord_length = hypot(dx, dy);
+  if (chord_length <= 0.0) {
+    return;
+  }
+
+  double mid_x = (start.x + end.x) * 0.5;
+  double mid_y = (start.y + end.y) * 0.5;
+  double normal_x = -dy / chord_length;
+  double normal_y = dx / chord_length;
+
+  double radius = chord_length * 0.5;
+  double center_x = mid_x + normal_x * 0.0;
+  double center_y = mid_y + normal_y * 0.0;
+
+  double start_angle = atan2(start.y - center_y, start.x - center_x);
+  double end_angle = atan2(end.y - center_y, end.x - center_x);
+
+  if (side == ARC_SIDE_LEFT) {
+    if (end_angle <= start_angle) {
+      end_angle += 2.0 * M_PI;
+    }
+  } else {
+    if (start_angle <= end_angle) {
+      start_angle += 2.0 * M_PI;
+    }
+  }
+
+  cairo_set_line_width(cr, CONFIG_EDGE_WIDTH);
+  cairo_arc(cr, center_x, center_y, radius, start_angle, end_angle);
+  cairo_stroke(cr);
+}
+
+void renderer_draw_line_bresenham(PixelBuffer *buffer, double start_x,
+                                  double start_y, double end_x, double end_y,
+                                  uint32_t color) {
+  if (buffer == NULL || buffer->pixels == NULL || buffer->width <= 0 ||
+      buffer->height <= 0) {
+    return;
+  }
+
+  int x0 = (int)lround(start_x);
+  int y0 = (int)lround(start_y);
+  int x1 = (int)lround(end_x);
+  int y1 = (int)lround(end_y);
+  int dx = abs(x1 - x0);
+  int sx = x0 < x1 ? 1 : -1;
+  int dy = -abs(y1 - y0);
+  int sy = y0 < y1 ? 1 : -1;
+  int error = dx + dy;
+
+  while (1) {
+    if (x0 >= 0 && x0 < buffer->width && y0 >= 0 && y0 < buffer->height) {
+      buffer->pixels[(size_t)y0 * (size_t)buffer->width + (size_t)x0] = color;
+    }
+
+    if (x0 == x1 && y0 == y1) {
+      break;
+    }
+
+    int doubled_error = 2 * error;
+    if (doubled_error >= dy) {
+      error += dy;
+      x0 += sx;
+    }
+    if (doubled_error <= dx) {
+      error += dx;
+      y0 += sy;
+    }
+  }
+}
+
+static void renderer_draw_edge_constraints_labels(cairo_t *cr,
+                                                  const Edge *edge) {
+  if (cr == NULL || edge == NULL || edge->start == NULL || edge->end == NULL)
+    return;
+
+  double mid_x = (edge->start->x + edge->end->x) * 0.5;
+  double mid_y = (edge->start->y + edge->end->y) * 0.5;
+
+  char label[64] = "";
+  if ((edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) &&
+      (edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL)) {
+    snprintf(label, sizeof(label), "L:%.1f | || %d", edge->length.length,
+             edge->parallel.group_id);
+  } else if (edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) {
+    snprintf(label, sizeof(label), "L:%.1f", edge->length.length);
+  } else if (edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL) {
+    snprintf(label, sizeof(label), "|| %d", edge->parallel.group_id);
+  } else {
+    return;
+  }
+
+  cairo_set_font_size(cr, CONFIG_LENGTH_LABEL_FONT_SIZE);
+  cairo_text_extents_t extents;
+  cairo_text_extents(cr, label, &extents);
+
+  renderer_set_source_argb(cr, CONFIG_LABEL_BACKGROUND_COLOR);
+  cairo_rectangle(cr, mid_x - extents.width * 0.5 - CONFIG_LENGTH_LABEL_PADDING,
+                  mid_y - extents.height * 0.5 - CONFIG_LENGTH_LABEL_PADDING,
+                  extents.width + CONFIG_LENGTH_LABEL_PADDING * 2.0,
+                  extents.height + CONFIG_LENGTH_LABEL_PADDING * 2.0);
+  cairo_fill(cr);
+
+  renderer_set_source_argb(cr, CONFIG_LABEL_TEXT_COLOR);
+  cairo_move_to(cr, mid_x - extents.width * 0.5 - extents.x_bearing,
+                mid_y - extents.height * 0.5 - extents.y_bearing);
+  cairo_show_text(cr, label);
+  cairo_new_path(cr);
+}
+
+void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
+                                int height, gpointer user_data) {
+  (void)area;
+
+  AppState *state = user_data;
+  if (state == NULL) {
+    return;
+  }
+
+  renderer_draw_background(cr, width, height);
+
+  PixelBuffer *buffer = NULL;
+  if (state->use_bresenham) {
+    buffer = pixel_buffer_create(width, height);
+  }
+
+  if (state->edges != NULL) {
+    for (EdgeNode *node = state->edges->head; node != NULL; node = node->next) {
+      if (node->edge.start == NULL || node->edge.end == NULL) {
+        continue;
+      }
+
+      switch (node->edge.type) {
+      case EDGE_TYPE_BEZIER:
+        renderer_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
+        cairo_set_line_width(cr, CONFIG_EDGE_ANCHOR_LINE_WIDTH);
+        cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
+        cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
+        cairo_stroke(cr);
+
+        renderer_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
+        cairo_set_dash(cr,
+                       (double[]){CONFIG_EDGE_GUIDE_DASH_LENGTH,
+                                  CONFIG_EDGE_GUIDE_DASH_GAP},
+                       2, 0.0);
+        cairo_set_line_width(cr, CONFIG_EDGE_GUIDE_LINE_WIDTH);
+        cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
+        cairo_line_to(cr, node->edge.geometry.bezier.control1.x,
+                      node->edge.geometry.bezier.control1.y);
+        cairo_line_to(cr, node->edge.geometry.bezier.control2.x,
+                      node->edge.geometry.bezier.control2.y);
+        cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
+        cairo_stroke(cr);
+        cairo_set_dash(cr, NULL, 0, 0.0);
+
+        renderer_draw_bezier_incremental(buffer, cr, *(node->edge.start),
+                                         node->edge.geometry.bezier.control1,
+                                         node->edge.geometry.bezier.control2,
+                                         *(node->edge.end), CONFIG_EDGE_COLOR,
+                                         state->use_bresenham);
+
+        renderer_set_source_argb(cr, CONFIG_CONTROL_POINT_COLOR);
+        cairo_arc(cr, node->edge.geometry.bezier.control1.x,
+                  node->edge.geometry.bezier.control1.y,
+                  CONFIG_CONTROL_POINT_RADIUS, 0, 2 * G_PI);
+        cairo_fill(cr);
+        cairo_arc(cr, node->edge.geometry.bezier.control2.x,
+                  node->edge.geometry.bezier.control2.y,
+                  CONFIG_CONTROL_POINT_RADIUS, 0, 2 * G_PI);
+        cairo_fill(cr);
+        break;
+
+      case EDGE_TYPE_ARC:
+        renderer_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
+        cairo_set_line_width(cr, CONFIG_EDGE_ANCHOR_LINE_WIDTH);
+        cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
+        cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
+        cairo_stroke(cr);
+
+        renderer_set_source_argb(cr, CONFIG_EDGE_COLOR);
+        renderer_draw_arc(cr, *(node->edge.start), *(node->edge.end),
+                          node->edge.geometry.arc.side);
+        break;
+
+      case EDGE_TYPE_STRAIGHT:
+      default:
+        if (state->use_bresenham && buffer != NULL) {
+          renderer_draw_line_bresenham(buffer, node->edge.start->x,
+                                       node->edge.start->y, node->edge.end->x,
+                                       node->edge.end->y, CONFIG_EDGE_COLOR);
+        } else {
+          cairo_save(cr);
+          renderer_set_source_argb(cr, CONFIG_EDGE_COLOR);
+          cairo_set_line_width(cr, CONFIG_EDGE_WIDTH);
+          cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+          cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
+          cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
+          cairo_stroke(cr);
+          cairo_restore(cr);
+        }
+        break;
+      }
+    }
+  }
+
+  if (state->use_bresenham && buffer != NULL) {
+    cairo_surface_t *surface = cairo_image_surface_create_for_data(
+        (unsigned char *)buffer->pixels, CAIRO_FORMAT_ARGB32, width, height,
+        width * (int)sizeof(uint32_t));
+    if (cairo_surface_status(surface) == CAIRO_STATUS_SUCCESS) {
+      cairo_save(cr);
+      cairo_set_source_surface(cr, surface, 0, 0);
+      cairo_paint(cr);
+      cairo_restore(cr);
+    }
+    cairo_surface_destroy(surface);
+    pixel_buffer_destroy(buffer);
+  }
+
+  if (state->hovered_edge != NULL && state->hovered_edge->edge.start != NULL &&
+      state->hovered_edge->edge.end != NULL) {
+    cairo_save(cr);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+    renderer_set_source_argb(cr, CONFIG_HOVER_COLOR);
+    cairo_set_line_width(cr, CONFIG_EDGE_WIDTH + CONFIG_HOVER_OUTLINE_WIDTH);
+
+    Edge *edge = &state->hovered_edge->edge;
+    cairo_move_to(cr, edge->start->x, edge->start->y);
+    cairo_line_to(cr, edge->end->x, edge->end->y);
+    cairo_stroke(cr);
+    cairo_restore(cr);
+  }
+
+  if (state->points != NULL) {
+    for (PointNode *node = state->points->head; node != NULL;
+         node = node->next) {
+      if (node->point == NULL) {
+        continue;
+      }
+
+      cairo_arc(cr, node->point->x, node->point->y, CONFIG_POINT_RADIUS, 0,
+                2 * G_PI);
+      if (node->point == state->hovered_point) {
+        renderer_set_source_argb(cr, CONFIG_POINT_COLOR);
+        cairo_fill_preserve(cr);
+        renderer_set_source_argb(cr, CONFIG_HOVER_COLOR);
+        cairo_set_line_width(cr, CONFIG_HOVER_OUTLINE_WIDTH);
+        cairo_stroke(cr);
+      } else {
+        renderer_set_source_argb(cr, CONFIG_POINT_COLOR);
+        cairo_fill(cr);
+      }
+    }
+  }
+
+  if (state->edges != NULL) {
+    for (EdgeNode *node = state->edges->head; node != NULL; node = node->next) {
+      renderer_draw_edge_constraints_labels(cr, &node->edge);
+    }
+  }
+}
+</file>
+
+<file path="controller/drawing_area_controller.c">
+#include "controller/drawing_area_controller.h"
+
+#include <math.h>
+
+#include "config/config.h"
+#include "controller/edge_menu_controller.h"
+#include "controller/point_menu_controller.h"
+
+static DragState drag_state;
+static double last_drag_x = 0.0;
+static double last_drag_y = 0.0;
+
+static void drawing_area_clamp_to_canvas(GtkWidget *widget, double *x,
+                                         double *y) {
+  if (widget == NULL || x == NULL || y == NULL) {
+    return;
+  }
+
+  int width = gtk_widget_get_width(widget);
+  int height = gtk_widget_get_height(widget);
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+
+  *x = fmin(fmax(*x, 0.0), (double)width);
+  *y = fmin(fmax(*y, 0.0), (double)height);
+}
+
+static void enforce_handle_continuity(EdgeNode *active_edge, int handle_idx) {
+  if (active_edge == NULL || active_edge->edge.type != EDGE_TYPE_BEZIER)
+    return;
+
+  Point *shared_vertex =
+      (handle_idx == 0) ? active_edge->edge.start : active_edge->edge.end;
+  Point *c_active = (handle_idx == 0)
+                        ? &active_edge->edge.geometry.bezier.control1
+                        : &active_edge->edge.geometry.bezier.control2;
+
+  if (shared_vertex == NULL || shared_vertex->continuity == CONTINUITY_G0)
+    return;
+
+  EdgeNode *other = (shared_vertex->prev_edge == active_edge)
+                        ? shared_vertex->next_edge
+                        : shared_vertex->prev_edge;
+  if (other == NULL || other->edge.type != EDGE_TYPE_BEZIER)
+    return;
+
+  Point *c_other = (other->edge.start == shared_vertex)
+                       ? &other->edge.geometry.bezier.control1
+                       : &other->edge.geometry.bezier.control2;
+
+  double vx = c_active->x - shared_vertex->x;
+  double vy = c_active->y - shared_vertex->y;
+  double len = hypot(vx, vy);
+  if (len < 1e-6)
+    return;
+
+  double dir_x = -vx / len;
+  double dir_y = -vy / len;
+
+  if (shared_vertex->continuity == CONTINUITY_C1) {
+    c_other->x = shared_vertex->x - vx;
+    c_other->y = shared_vertex->y - vy;
+  } else if (shared_vertex->continuity == CONTINUITY_G1) {
+    double other_len =
+        hypot(c_other->x - shared_vertex->x, c_other->y - shared_vertex->y);
+    if (other_len < 1e-4)
+      other_len = len;
+    c_other->x = shared_vertex->x + dir_x * other_len;
+    c_other->y = shared_vertex->y + dir_y * other_len;
+  }
+}
+
+static void translate_connected_component(AppState *state, Point *start_point,
+                                          double dx, double dy) {
+  if (state == NULL || start_point == NULL) {
+    return;
+  }
+
+  GHashTable *visited_points = g_hash_table_new(g_direct_hash, g_direct_equal);
+  GHashTable *visited_edges = g_hash_table_new(g_direct_hash, g_direct_equal);
+  GQueue *queue = g_queue_new();
+
+  g_hash_table_add(visited_points, start_point);
+  g_queue_push_tail(queue, start_point);
+
+  while (!g_queue_is_empty(queue)) {
+    Point *p = g_queue_pop_head(queue);
+    p->x += dx;
+    p->y += dy;
+
+    EdgeNode *edges[2] = {p->prev_edge, p->next_edge};
+    for (int i = 0; i < 2; i++) {
+      EdgeNode *en = edges[i];
+      if (en == NULL)
+        continue;
+
+      if (!g_hash_table_contains(visited_edges, en)) {
+        g_hash_table_add(visited_edges, en);
+        if (en->edge.type == EDGE_TYPE_BEZIER) {
+          en->edge.geometry.bezier.control1.x += dx;
+          en->edge.geometry.bezier.control1.y += dy;
+          en->edge.geometry.bezier.control2.x += dx;
+          en->edge.geometry.bezier.control2.y += dy;
+        }
+      }
+
+      Point *neighbor = (en->edge.start == p) ? en->edge.end : en->edge.start;
+      if (neighbor != NULL &&
+          !g_hash_table_contains(visited_points, neighbor)) {
+        g_hash_table_add(visited_points, neighbor);
+        g_queue_push_tail(queue, neighbor);
+      }
+    }
+  }
+
+  g_queue_free(queue);
+  g_hash_table_destroy(visited_points);
+  g_hash_table_destroy(visited_edges);
+}
+
+Point *drawing_area_find_point_under_cursor(AppState *state, double x,
+                                            double y) {
+  if (state == NULL || state->points == NULL) {
+    return NULL;
+  }
+
+  for (PointNode *node = state->points->head; node != NULL; node = node->next) {
+    Point *point = node->point;
+    if (point == NULL) {
+      continue;
+    }
+
+    double dx = point->x - x;
+    double dy = point->y - y;
+    if (hypot(dx, dy) <= CONFIG_POINT_RADIUS + CONFIG_HOVER_OUTLINE_WIDTH) {
+      return point;
+    }
+  }
+
+  return NULL;
+}
+
+static EdgeNode *drawing_area_find_edge_under_cursor(AppState *state, double x,
+                                                     double y) {
+  if (state == NULL || state->edges == NULL) {
+    return NULL;
+  }
+
+  double closest_x = x;
+  double closest_y = y;
+  EdgeNode *edge =
+      edge_menu_find_edge_near_cursor(state, x, y, &closest_x, &closest_y);
+  if (edge == NULL) {
+    return NULL;
+  }
+
+  double distance = hypot(x - closest_x, y - closest_y);
+  if (distance <= CONFIG_PICK_TOLERANCE + CONFIG_HOVER_OUTLINE_WIDTH) {
+    return edge;
+  }
+
+  return NULL;
+}
+
+void drawing_area_update_hover_state(AppState *state, double x, double y) {
+  if (state == NULL) {
+    return;
+  }
+
+  state->hover_x = x;
+  state->hover_y = y;
+  state->hovered_point = drawing_area_find_point_under_cursor(state, x, y);
+  if (state->hovered_point != NULL) {
+    state->hovered_edge = NULL;
+    return;
+  }
+
+  state->hovered_edge = drawing_area_find_edge_under_cursor(state, x, y);
+}
+
+static EdgeNode *
+drawing_area_find_bezier_handle_under_cursor(AppState *state, double x,
+                                             double y, int *handle_index) {
+  if (state == NULL || state->edges == NULL || handle_index == NULL) {
+    return NULL;
+  }
+
+  for (EdgeNode *node = state->edges->head; node != NULL; node = node->next) {
+    if (node->edge.type != EDGE_TYPE_BEZIER) {
+      continue;
+    }
+
+    double dx1 = node->edge.geometry.bezier.control1.x - x;
+    double dy1 = node->edge.geometry.bezier.control1.y - y;
+    if (hypot(dx1, dy1) <= CONFIG_CONTROL_POINT_RADIUS + 4.0) {
+      *handle_index = 0;
+      return node;
+    }
+
+    double dx2 = node->edge.geometry.bezier.control2.x - x;
+    double dy2 = node->edge.geometry.bezier.control2.y - y;
+    if (hypot(dx2, dy2) <= CONFIG_CONTROL_POINT_RADIUS + 4.0) {
+      *handle_index = 1;
+      return node;
+    }
+  }
+
+  return NULL;
+}
+
+void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state) {
+  if (drawing_area == NULL || state == NULL) {
+    return;
+  }
+
+  drag_state.state = state;
+  drag_state.selected_point = NULL;
+  drag_state.selected_bezier_edge = NULL;
+  drag_state.selected_bezier_handle = -1;
+  drag_state.selected_edge = NULL;
+  drag_state.dragging = FALSE;
+  edge_menu_controller_connect(drawing_area, state);
+  point_menu_controller_connect(drawing_area, state);
+
+  GtkEventController *motion_controller = gtk_event_controller_motion_new();
+  gtk_widget_add_controller(drawing_area, motion_controller);
+  g_signal_connect(motion_controller, "motion",
+                   G_CALLBACK(drawing_area_motion_cb), NULL);
+
+  GtkGesture *click_gesture = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_gesture),
+                                GDK_BUTTON_PRIMARY);
+  gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(click_gesture));
+  g_signal_connect(click_gesture, "pressed", G_CALLBACK(drawing_area_click_cb),
+                   state);
+  g_signal_connect(click_gesture, "released",
+                   G_CALLBACK(drawing_area_release_cb), state);
+}
+
+void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
+                            double y, gpointer user_data) {
+  (void)user_data;
+  GtkWidget *widget =
+      gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller));
+
+  if (!drag_state.dragging) {
+    if (drag_state.state != NULL) {
+      drawing_area_update_hover_state(drag_state.state, x, y);
+    }
+    if (widget != NULL)
+      gtk_widget_queue_draw(widget);
+    return;
+  }
+
+  double next_x = x;
+  double next_y = y;
+  drawing_area_clamp_to_canvas(widget, &next_x, &next_y);
+
+  if (drag_state.selected_point != NULL) {
+    double dx = next_x - drag_state.selected_point->x;
+    double dy = next_y - drag_state.selected_point->y;
+    drag_state.selected_point->x = next_x;
+    drag_state.selected_point->y = next_y;
+
+    if (drag_state.selected_point->prev_edge &&
+        drag_state.selected_point->prev_edge->edge.type == EDGE_TYPE_BEZIER) {
+      Edge *e = &drag_state.selected_point->prev_edge->edge;
+      if (e->end == drag_state.selected_point) {
+        e->geometry.bezier.control2.x += dx;
+        e->geometry.bezier.control2.y += dy;
+      }
+    }
+    if (drag_state.selected_point->next_edge &&
+        drag_state.selected_point->next_edge->edge.type == EDGE_TYPE_BEZIER) {
+      Edge *e = &drag_state.selected_point->next_edge->edge;
+      if (e->start == drag_state.selected_point) {
+        e->geometry.bezier.control1.x += dx;
+        e->geometry.bezier.control1.y += dy;
+      }
+    }
+
+    edge_list_solve_constraints(drag_state.state->edges,
+                                drag_state.selected_point);
+  } else if (drag_state.selected_bezier_edge != NULL &&
+             drag_state.selected_bezier_edge->edge.type == EDGE_TYPE_BEZIER) {
+    if (drag_state.selected_bezier_handle == 0) {
+      drag_state.selected_bezier_edge->edge.geometry.bezier.control1.x = next_x;
+      drag_state.selected_bezier_edge->edge.geometry.bezier.control1.y = next_y;
+    } else if (drag_state.selected_bezier_handle == 1) {
+      drag_state.selected_bezier_edge->edge.geometry.bezier.control2.x = next_x;
+      drag_state.selected_bezier_edge->edge.geometry.bezier.control2.y = next_y;
+    }
+    enforce_handle_continuity(drag_state.selected_bezier_edge,
+                              drag_state.selected_bezier_handle);
+  } else if (drag_state.selected_edge != NULL &&
+             drag_state.selected_edge->edge.start != NULL) {
+    double dx = next_x - last_drag_x;
+    double dy = next_y - last_drag_y;
+    translate_connected_component(drag_state.state,
+                                  drag_state.selected_edge->edge.start, dx, dy);
+    edge_list_solve_constraints(drag_state.state->edges, NULL);
+  }
+
+  last_drag_x = next_x;
+  last_drag_y = next_y;
+
+  if (widget != NULL)
+    gtk_widget_queue_draw(widget);
+}
+
+void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
+                           double y, gpointer user_data) {
+  (void)n_press;
+  (void)gesture;
+
+  AppState *state = user_data;
+  if (state == NULL) {
+    return;
+  }
+
+  edge_menu_controller_dismiss();
+  point_menu_controller_dismiss();
+  state->hovered_point = NULL;
+  state->hovered_edge = NULL;
+
+  last_drag_x = x;
+  last_drag_y = y;
+
+  drag_state.selected_point = drawing_area_find_point_under_cursor(state, x, y);
+  if (drag_state.selected_point != NULL) {
+    drag_state.dragging = TRUE;
+    return;
+  }
+
+  drag_state.selected_bezier_edge =
+      drawing_area_find_bezier_handle_under_cursor(
+          state, x, y, &drag_state.selected_bezier_handle);
+  if (drag_state.selected_bezier_edge != NULL) {
+    drag_state.dragging = TRUE;
+    return;
+  }
+
+  drag_state.selected_edge = drawing_area_find_edge_under_cursor(state, x, y);
+  if (drag_state.selected_edge != NULL) {
+    drag_state.dragging = TRUE;
+    return;
+  }
+
+  drag_state.dragging = FALSE;
+}
+
+void drawing_area_release_cb(GtkGestureClick *gesture, int n_press, double x,
+                             double y, gpointer user_data) {
+  (void)gesture;
+  (void)n_press;
+
+  AppState *state = user_data;
+  if (state != NULL) {
+    drawing_area_update_hover_state(state, x, y);
+  }
+
+  drag_state.dragging = FALSE;
+  drag_state.selected_point = NULL;
+  drag_state.selected_bezier_edge = NULL;
+  drag_state.selected_bezier_handle = -1;
+  drag_state.selected_edge = NULL;
+}
+</file>
+
+</files>

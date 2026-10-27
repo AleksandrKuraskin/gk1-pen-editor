@@ -1,13 +1,13 @@
 #include "model/app_state.h"
 
+#include "edge.h"
 #include <math.h>
 #include <stdlib.h>
 
 static Point *app_state_add_point(AppState *state, double x, double y) {
   Point *point = point_create(x, y);
-  if (point == NULL) {
+  if (point == NULL)
     return NULL;
-  }
 
   size_t previous_count = state->points->count;
   point_list_append(state->points, point);
@@ -19,79 +19,73 @@ static Point *app_state_add_point(AppState *state, double x, double y) {
   return point;
 }
 
-static int app_state_add_edge(AppState *state, Point *start, Point *end) {
-  return edge_list_append(state->edges, start, end);
+static EdgeNode *app_state_add_edge_and_get(AppState *state, Point *start,
+                                            Point *end) {
+  if (!edge_list_append(state->edges, start, end))
+    return NULL;
+  EdgeNode *node = state->edges->head;
+  while (node->next != NULL)
+    node = node->next;
+  return node;
 }
 
-static int app_state_add_sample_polygon(AppState *state) {
-  static const double vertices[][2] = {
-      {340, 180}, {700, 180}, {850, 390}, {610, 560}, {350, 430},
-  };
-  Point *points[sizeof(vertices) / sizeof(vertices[0])];
-  size_t point_count = sizeof(points) / sizeof(points[0]);
-
-  for (size_t i = 0; i < point_count; i++) {
-    points[i] = app_state_add_point(state, vertices[i][0], vertices[i][1]);
-    if (points[i] == NULL) {
+static int app_state_init_scene(AppState *state) {
+  static const double poly1[5][2] = {
+      {200, 150}, {460, 150}, {560, 320}, {400, 480}, {180, 380}};
+  Point *pts1[5];
+  for (int i = 0; i < 5; i++) {
+    pts1[i] = app_state_add_point(state, poly1[i][0], poly1[i][1]);
+    if (!pts1[i])
       return 0;
-    }
+  }
+  EdgeNode *edges1[5];
+  for (int i = 0; i < 5; i++) {
+    edges1[i] = app_state_add_edge_and_get(state, pts1[i], pts1[(i + 1) % 5]);
+    if (!edges1[i])
+      return 0;
   }
 
-  for (size_t i = 0; i < point_count; i++) {
-    if (!app_state_add_edge(state, points[i], points[(i + 1) % point_count])) {
+  Point c1 = {.x = 280,
+              .y = 80,
+              .prev_edge = NULL,
+              .next_edge = NULL,
+              .continuity = CONTINUITY_G1};
+  Point c2 = {.x = 380,
+              .y = 80,
+              .prev_edge = NULL,
+              .next_edge = NULL,
+              .continuity = CONTINUITY_G1};
+  edge_set_bezier(&edges1[0]->edge, c1, c2);
+
+  edge_set_length_constraint(&edges1[1]->edge, hypot(pts1[2]->x - pts1[1]->x,
+                                                     pts1[2]->y - pts1[1]->y));
+
+  static const double poly2[4][2] = {
+      {750, 180}, {1000, 180}, {950, 420}, {700, 380}};
+  Point *pts2[4];
+  for (int i = 0; i < 4; i++) {
+    pts2[i] = app_state_add_point(state, poly2[i][0], poly2[i][1]);
+    if (!pts2[i])
       return 0;
-    }
   }
+  EdgeNode *edges2[4];
+  for (int i = 0; i < 4; i++) {
+    edges2[i] = app_state_add_edge_and_get(state, pts2[i], pts2[(i + 1) % 4]);
+    if (!edges2[i])
+      return 0;
+  }
+  state->next_parallel_group_id = 1;
+  edge_set_parallel_constraint(edges1[3], edges2[0],
+                               state->next_parallel_group_id++);
 
   app_state_link_point_edges(state);
-
-  if (state->edges == NULL || state->edges->head == NULL) {
-    return 0;
-  }
-
-  EdgeNode *bezier_edge = state->edges->head;
-  const Point *start = bezier_edge->edge.start;
-  const Point *end = bezier_edge->edge.end;
-  double dx = end->x - start->x;
-  double dy = end->y - start->y;
-  double length = hypot(dx, dy);
-
-  if (length == 0.0) {
-    return 0;
-  }
-
-  double normal_x = -dy / length;
-  double normal_y = dx / length;
-  double offset = length * 0.28;
-
-  Point control1 = {
-      .x = start->x + dx * 0.33 + normal_x * offset,
-      .y = start->y + dy * 0.33 + normal_y * offset,
-      .prev_edge = NULL,
-      .next_edge = NULL,
-  };
-  Point control2 = {
-      .x = end->x - dx * 0.33 + normal_x * offset,
-      .y = end->y - dy * 0.33 + normal_y * offset,
-      .prev_edge = NULL,
-      .next_edge = NULL,
-  };
-
-  if (!edge_set_bezier(&bezier_edge->edge, control1, control2)) {
-    return 0;
-  }
-  if (!edge_set_constraint(&bezier_edge->edge, EDGE_CONSTRAINT_LENGTH)) {
-    return 0;
-  }
-
   return 1;
 }
 
 AppState *app_state_create(void) {
   AppState *state = malloc(sizeof(*state));
-  if (state == NULL) {
+  if (state == NULL)
     return NULL;
-  }
 
   state->points = point_list_create();
   state->edges = edge_list_create();
@@ -99,6 +93,9 @@ AppState *app_state_create(void) {
   state->hover_y = 0.0;
   state->hovered_point = NULL;
   state->hovered_edge = NULL;
+  state->use_bresenham = TRUE;
+  state->next_parallel_group_id = 1;
+
   if (state->points == NULL || state->edges == NULL) {
     point_list_destroy(state->points);
     edge_list_destroy(state->edges);
@@ -106,7 +103,7 @@ AppState *app_state_create(void) {
     return NULL;
   }
 
-  if (!app_state_add_sample_polygon(state)) {
+  if (!app_state_init_scene(state)) {
     app_state_destroy(state);
     return NULL;
   }
@@ -115,27 +112,21 @@ AppState *app_state_create(void) {
 }
 
 void app_state_destroy(AppState *state) {
-  if (state == NULL) {
+  if (state == NULL)
     return;
-  }
-
   point_list_destroy(state->points);
   edge_list_destroy(state->edges);
   free(state);
 }
 
 void app_state_link_point_edges(AppState *state) {
-  if (state == NULL || state->edges == NULL) {
+  if (state == NULL || state->edges == NULL)
     return;
-  }
-
   for (EdgeNode *edge = state->edges->head; edge != NULL; edge = edge->next) {
-    if (edge->edge.start != NULL) {
+    if (edge->edge.start != NULL)
       point_attach_edge(edge->edge.start, edge);
-    }
-    if (edge->edge.end != NULL) {
+    if (edge->edge.end != NULL)
       point_attach_edge(edge->edge.end, edge);
-    }
   }
 }
 
@@ -190,54 +181,45 @@ void app_state_disconnect_point_edges(AppState *state, Point *point) {
 }
 
 int app_state_remove_point(AppState *state, Point *point) {
-  if (state == NULL || state->points == NULL || point == NULL) {
+  if (state == NULL || state->points == NULL || point == NULL)
     return 0;
-  }
 
   EdgeNode *prev_edge = point->prev_edge;
   EdgeNode *next_edge = point->next_edge;
-  if (prev_edge == NULL || next_edge == NULL || prev_edge == next_edge) {
+  if (prev_edge == NULL || next_edge == NULL || prev_edge == next_edge)
     return 0;
-  }
 
-  Point *prev_point = prev_edge->edge.start == point ? prev_edge->edge.end
-                                                     : prev_edge->edge.start;
-  Point *next_point = next_edge->edge.start == point ? next_edge->edge.end
-                                                     : next_edge->edge.start;
-  if (prev_point == NULL || next_point == NULL) {
-    return 0;
-  }
-
-  prev_edge->edge.constraint_type = EDGE_CONSTRAINT_NONE;
-  next_edge->edge.constraint_type = EDGE_CONSTRAINT_NONE;
+  edge_remove_all_constraints(prev_edge);
+  edge_remove_all_constraints(next_edge);
 
   app_state_disconnect_point_edges(state, point);
 
   PointNode *previous = NULL;
-  for (PointNode *current = state->points->head; current != NULL;
-       current = current->next) {
-    if (current->point == point) {
-      if (previous == NULL) {
-        state->points->head = current->next;
-      } else {
-        previous->next = current->next;
-      }
+  for (PointNode *cur = state->points->head; cur != NULL; cur = cur->next) {
+    if (cur->point == point) {
+      if (previous == NULL)
+        state->points->head = cur->next;
+      else
+        previous->next = cur->next;
       point_destroy(point);
-      free(current);
+      free(cur);
       state->points->count -= 1;
       return 1;
     }
-    previous = current;
+    previous = cur;
   }
 
   return 0;
 }
 
-int app_state_insert_point(AppState *state, EdgeNode *edge, double x, double y) {
+int app_state_insert_point(AppState *state, EdgeNode *edge, double x,
+                           double y) {
   if (state == NULL || state->points == NULL || state->edges == NULL ||
       edge == NULL) {
     return 0;
   }
+
+  edge_remove_all_constraints(edge);
 
   Point *point = point_create(x, y);
   PointNode *point_node = malloc(sizeof(*point_node));
@@ -252,43 +234,29 @@ int app_state_insert_point(AppState *state, EdgeNode *edge, double x, double y) 
   Point *old_start = edge->edge.start;
   Point *old_end = edge->edge.end;
 
-  if (old_start == NULL || old_end == NULL) {
-    point_destroy(point);
-    free(point_node);
-    free(split_edge);
-    return 0;
-  }
-
-  EdgeNode *old_next = edge->next;
   split_edge->edge = edge->edge;
   split_edge->edge.start = point;
   split_edge->edge.end = old_end;
-  split_edge->next = old_next;
-
-  if (edge->edge.constraint_type == EDGE_CONSTRAINT_LENGTH) {
-    edge->edge.constraints.length.length =
-        hypot(point->x - old_start->x, point->y - old_start->y);
-    split_edge->edge.constraints.length.length =
-        hypot(old_end->x - point->x, old_end->y - point->y);
-  }
+  split_edge->edge.constraint_mask = EDGE_CONSTRAINT_NONE;
+  split_edge->edge.parallel.target = NULL;
+  split_edge->edge.parallel.group_id = 0;
+  split_edge->next = edge->next;
 
   edge->edge.end = point;
 
   if (old_start != NULL) {
-    if (old_start->prev_edge == edge) {
+    if (old_start->prev_edge == edge)
       old_start->prev_edge = NULL;
-    } else if (old_start->next_edge == edge) {
+    else if (old_start->next_edge == edge)
       old_start->next_edge = NULL;
-    }
     old_start->next_edge = edge;
   }
 
   if (old_end != NULL) {
-    if (old_end->prev_edge == edge) {
+    if (old_end->prev_edge == edge)
       old_end->prev_edge = NULL;
-    } else if (old_end->next_edge == edge) {
+    else if (old_end->next_edge == edge)
       old_end->next_edge = NULL;
-    }
     old_end->prev_edge = split_edge;
   }
 
@@ -309,9 +277,8 @@ int app_state_insert_point(AppState *state, EdgeNode *edge, double x, double y) 
     state->points->head = point_node;
   } else {
     PointNode *tail = state->points->head;
-    while (tail->next != NULL) {
+    while (tail->next != NULL)
       tail = tail->next;
-    }
     tail->next = point_node;
   }
   state->points->count += 1;

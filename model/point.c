@@ -52,6 +52,7 @@ Point *point_create(double x, double y) {
   point->y = y;
   point->prev_edge = NULL;
   point->next_edge = NULL;
+  point->continuity = CONTINUITY_G1;
   return point;
 }
 

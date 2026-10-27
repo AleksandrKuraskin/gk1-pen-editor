@@ -8,7 +8,7 @@
 typedef struct {
   GtkWidget *drawing_area;
   GtkWidget *popover;
-  GtkWidget *constraint_dropdown;
+  GtkWidget *length_spin;
   AppState *state;
   EdgeNode *edge;
   double insert_x;
@@ -101,12 +101,16 @@ static void edge_menu_set_bezier_defaults(EdgeNode *edge) {
       .y = edge->edge.start->y + dy * 0.33 + normal_y * offset,
       .prev_edge = NULL,
       .next_edge = NULL,
+      .continuity = CONTINUITY_G1,
+      .continuity_set_by_user = FALSE,
   };
   Point control2 = {
       .x = edge->edge.end->x - dx * 0.33 + normal_x * offset,
       .y = edge->edge.end->y - dy * 0.33 + normal_y * offset,
       .prev_edge = NULL,
       .next_edge = NULL,
+      .continuity = CONTINUITY_G1,
+      .continuity_set_by_user = FALSE,
   };
 
   edge_set_bezier(&edge->edge, control1, control2);
@@ -143,6 +147,12 @@ static void edge_menu_set_type(GtkButton *button, gpointer user_data) {
     EdgeType type = (EdgeType)GPOINTER_TO_INT(user_data);
     if (type == EDGE_TYPE_BEZIER) {
       edge_menu_set_bezier_defaults(edge_menu_state.edge);
+      if (!edge_menu_state.edge->edge.start->continuity_set_by_user) {
+        edge_menu_state.edge->edge.start->continuity = CONTINUITY_G1;
+      }
+      if (!edge_menu_state.edge->edge.end->continuity_set_by_user) {
+        edge_menu_state.edge->edge.end->continuity = CONTINUITY_G1;
+      }
     } else if (type == EDGE_TYPE_ARC) {
       edge_menu_set_arc_defaults(edge_menu_state.edge);
     } else {
@@ -153,21 +163,52 @@ static void edge_menu_set_type(GtkButton *button, gpointer user_data) {
   edge_menu_close();
 }
 
-static void edge_menu_set_constraint(GtkButton *button, gpointer user_data) {
+static void edge_menu_apply_length_cb(GtkButton *button, gpointer user_data) {
   (void)button;
-  EdgeConstraintType constraint_type =
-      (EdgeConstraintType)GPOINTER_TO_INT(user_data);
-  GtkPopover *constraint_popover = gtk_menu_button_get_popover(
-      GTK_MENU_BUTTON(edge_menu_state.constraint_dropdown));
-  if (edge_menu_state.edge != NULL &&
-      edge_set_constraint(&edge_menu_state.edge->edge, constraint_type)) {
+  (void)user_data;
+  if (edge_menu_state.edge != NULL && edge_menu_state.length_spin != NULL) {
+    double target_len =
+        gtk_spin_button_get_value(GTK_SPIN_BUTTON(edge_menu_state.length_spin));
+    edge_set_length_constraint(&edge_menu_state.edge->edge, target_len);
+    edge_list_solve_constraints(edge_menu_state.state->edges,
+                                edge_menu_state.edge->edge.start);
     gtk_widget_queue_draw(edge_menu_state.drawing_area);
   }
-  gtk_menu_button_set_label(
-      GTK_MENU_BUTTON(edge_menu_state.constraint_dropdown),
-      constraint_type == EDGE_CONSTRAINT_LENGTH ? "Length" : "None");
-  if (constraint_popover != NULL) {
-    gtk_popover_popdown(constraint_popover);
+  edge_menu_close();
+}
+
+static void edge_menu_remove_length_cb(GtkButton *button, gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  if (edge_menu_state.edge != NULL) {
+    edge_remove_length_constraint(&edge_menu_state.edge->edge);
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_pair_parallel_cb(GtkButton *button, gpointer user_data) {
+  (void)button;
+  EdgeNode *target = (EdgeNode *)user_data;
+  if (edge_menu_state.edge != NULL && target != NULL &&
+      edge_menu_state.state != NULL) {
+    edge_set_parallel_constraint(
+        edge_menu_state.edge, target,
+        edge_menu_state.state->next_parallel_group_id++);
+    edge_list_solve_constraints(edge_menu_state.state->edges,
+                                edge_menu_state.edge->edge.start);
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_remove_parallel_cb(GtkButton *button,
+                                         gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  if (edge_menu_state.edge != NULL) {
+    edge_remove_parallel_constraint(edge_menu_state.edge);
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
   }
   edge_menu_close();
 }
@@ -175,7 +216,7 @@ static void edge_menu_set_constraint(GtkButton *button, gpointer user_data) {
 static void edge_menu_insert_point(GtkButton *button, gpointer user_data) {
   (void)button;
   (void)user_data;
-  if (edge_menu_state.edge != NULL) {
+  if (edge_menu_state.edge != NULL && edge_menu_state.state != NULL) {
     app_state_insert_point(edge_menu_state.state, edge_menu_state.edge,
                            edge_menu_state.insert_x, edge_menu_state.insert_y);
     gtk_widget_queue_draw(edge_menu_state.drawing_area);
@@ -187,6 +228,7 @@ static void edge_menu_secondary_click_cb(GtkGestureClick *gesture, int n_press,
                                          double x, double y,
                                          gpointer user_data) {
   (void)n_press;
+  (void)gesture;
   AppState *state = user_data;
   if (state == NULL || edge_menu_state.popover == NULL) {
     return;
@@ -211,15 +253,22 @@ static void edge_menu_secondary_click_cb(GtkGestureClick *gesture, int n_press,
   edge_menu_state.edge = edge;
   edge_menu_state.insert_x = closest_x;
   edge_menu_state.insert_y = closest_y;
-  gtk_menu_button_set_label(
-      GTK_MENU_BUTTON(edge_menu_state.constraint_dropdown),
-      edge->edge.constraint_type == EDGE_CONSTRAINT_LENGTH ? "Length" : "None");
+
+  if (edge->edge.start != NULL && edge->edge.end != NULL &&
+      edge_menu_state.length_spin != NULL) {
+    double current_len = hypot(edge->edge.end->x - edge->edge.start->x,
+                               edge->edge.end->y - edge->edge.start->y);
+    if (edge->edge.constraint_mask & EDGE_CONSTRAINT_LENGTH) {
+      current_len = edge->edge.length.length;
+    }
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(edge_menu_state.length_spin),
+                              current_len);
+  }
 
   GdkRectangle pointing_to = {(int)lround(x), (int)lround(y), 1, 1};
   gtk_popover_set_pointing_to(GTK_POPOVER(edge_menu_state.popover),
                               &pointing_to);
   gtk_popover_popup(GTK_POPOVER(edge_menu_state.popover));
-  (void)gesture;
 }
 
 static void edge_menu_create(GtkWidget *drawing_area) {
@@ -230,17 +279,18 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   }
 
   gtk_widget_set_parent(edge_menu_state.popover, drawing_area);
-
   gtk_popover_set_autohide(GTK_POPOVER(edge_menu_state.popover), TRUE);
   g_signal_connect(drawing_area, "destroy", G_CALLBACK(edge_menu_destroy),
                    NULL);
 
   GtkWidget *menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-  GtkWidget *section_label = gtk_label_new("Edge type");
+
+  GtkWidget *section_label = gtk_label_new("Typ krawędzi:");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
 
-  const char *type_labels[] = {"Straight", "Bezier", "Arc"};
+  const char *type_labels[] = {"Odcinek prosty", "Krzywa Béziera",
+                               "Łuk okręgu"};
   for (int i = 0; i < 3; i++) {
     GtkWidget *button = gtk_button_new_with_label(type_labels[i]);
     gtk_widget_set_halign(button, GTK_ALIGN_FILL);
@@ -251,34 +301,68 @@ static void edge_menu_create(GtkWidget *drawing_area) {
 
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-  section_label = gtk_label_new("Constraints");
+
+  section_label = gtk_label_new("Zadana długość krawędzi:");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
-  const char *constraint_labels[] = {"None", "Length"};
-  edge_menu_state.constraint_dropdown = gtk_menu_button_new();
-  gtk_menu_button_set_label(
-      GTK_MENU_BUTTON(edge_menu_state.constraint_dropdown), "None");
-  gtk_widget_set_halign(edge_menu_state.constraint_dropdown, GTK_ALIGN_FILL);
-  GtkWidget *constraint_popover = gtk_popover_new();
-  GtkWidget *constraint_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-  for (int i = 0; i < 2; i++) {
-    GtkWidget *button = gtk_button_new_with_label(constraint_labels[i]);
-    gtk_widget_set_halign(button, GTK_ALIGN_FILL);
-    gtk_box_append(GTK_BOX(constraint_box), button);
-    g_signal_connect(button, "clicked", G_CALLBACK(edge_menu_set_constraint),
-                     GINT_TO_POINTER(i));
-  }
-  gtk_popover_set_child(GTK_POPOVER(constraint_popover), constraint_box);
-  gtk_menu_button_set_popover(
-      GTK_MENU_BUTTON(edge_menu_state.constraint_dropdown), constraint_popover);
-  gtk_box_append(GTK_BOX(menu_box), edge_menu_state.constraint_dropdown);
+
+  GtkWidget *spin_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  edge_menu_state.length_spin =
+      gtk_spin_button_new_with_range(10.0, 2000.0, 5.0);
+  gtk_widget_set_hexpand(edge_menu_state.length_spin, TRUE);
+  gtk_box_append(GTK_BOX(spin_box), edge_menu_state.length_spin);
+
+  GtkWidget *apply_len_btn = gtk_button_new_with_label("Ustaw");
+  g_signal_connect(apply_len_btn, "clicked",
+                   G_CALLBACK(edge_menu_apply_length_cb), NULL);
+  gtk_box_append(GTK_BOX(spin_box), apply_len_btn);
+  gtk_box_append(GTK_BOX(menu_box), spin_box);
+
+  GtkWidget *remove_len_btn =
+      gtk_button_new_with_label("Usuń ograniczenie długości");
+  g_signal_connect(remove_len_btn, "clicked",
+                   G_CALLBACK(edge_menu_remove_length_cb), NULL);
+  gtk_box_append(GTK_BOX(menu_box), remove_len_btn);
 
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-  section_label = gtk_label_new("Add point");
+
+  section_label = gtk_label_new("Równoległość (litera K):");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
-  GtkWidget *insert_button = gtk_button_new_with_label("Insert point");
+
+  GtkWidget *parallel_btn = gtk_menu_button_new();
+  gtk_menu_button_set_label(GTK_MENU_BUTTON(parallel_btn),
+                            "Połącz równolegle z...");
+  GtkWidget *parallel_pop = gtk_popover_new();
+  GtkWidget *parallel_list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+
+  if (edge_menu_state.state != NULL && edge_menu_state.state->edges != NULL) {
+    int idx = 1;
+    for (EdgeNode *node = edge_menu_state.state->edges->head; node != NULL;
+         node = node->next) {
+      char btn_text[64];
+      snprintf(btn_text, sizeof(btn_text), "Krawędź #%d", idx++);
+      GtkWidget *p_item = gtk_button_new_with_label(btn_text);
+      g_signal_connect(p_item, "clicked",
+                       G_CALLBACK(edge_menu_pair_parallel_cb), node);
+      gtk_box_append(GTK_BOX(parallel_list_box), p_item);
+    }
+  }
+  gtk_popover_set_child(GTK_POPOVER(parallel_pop), parallel_list_box);
+  gtk_menu_button_set_popover(GTK_MENU_BUTTON(parallel_btn), parallel_pop);
+  gtk_box_append(GTK_BOX(menu_box), parallel_btn);
+
+  GtkWidget *remove_par_btn = gtk_button_new_with_label("Usuń równoległość");
+  g_signal_connect(remove_par_btn, "clicked",
+                   G_CALLBACK(edge_menu_remove_parallel_cb), NULL);
+  gtk_box_append(GTK_BOX(menu_box), remove_par_btn);
+
+  gtk_box_append(GTK_BOX(menu_box),
+                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+  GtkWidget *insert_button =
+      gtk_button_new_with_label("Wstaw wierzchołek w tym punkcie");
   gtk_widget_set_halign(insert_button, GTK_ALIGN_FILL);
   gtk_box_append(GTK_BOX(menu_box), insert_button);
   g_signal_connect(insert_button, "clicked", G_CALLBACK(edge_menu_insert_point),

@@ -3,6 +3,7 @@
 
 #include "model/edge.h"
 #include "model/point.h"
+#include <glib.h>
 
 typedef struct {
   PointList *points;
@@ -11,6 +12,8 @@ typedef struct {
   double hover_y;
   Point *hovered_point;
   EdgeNode *hovered_edge;
+  gboolean use_bresenham;
+  int next_parallel_group_id;
 } AppState;
 
 AppState *app_state_create(void);
