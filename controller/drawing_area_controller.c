@@ -26,51 +26,6 @@ static void drawing_area_clamp_to_canvas(GtkWidget *widget, double *x,
   *y = fmin(fmax(*y, 0.0), (double)height);
 }
 
-static void enforce_handle_continuity(EdgeNode *active_edge, int handle_idx) {
-  if (active_edge == NULL || active_edge->edge.type != EDGE_TYPE_BEZIER)
-    return;
-
-  Point *shared_vertex =
-      (handle_idx == 0) ? active_edge->edge.start : active_edge->edge.end;
-  Point *c_active = (handle_idx == 0)
-                        ? &active_edge->edge.geometry.bezier.control1
-                        : &active_edge->edge.geometry.bezier.control2;
-
-  if (shared_vertex == NULL || shared_vertex->continuity == CONTINUITY_G0)
-    return;
-
-  EdgeNode *other = (shared_vertex->prev_edge == active_edge)
-                        ? shared_vertex->next_edge
-                        : shared_vertex->prev_edge;
-  if (other == NULL || other->edge.type != EDGE_TYPE_BEZIER)
-    return;
-
-  Point *c_other = (other->edge.start == shared_vertex)
-                       ? &other->edge.geometry.bezier.control1
-                       : &other->edge.geometry.bezier.control2;
-
-  double vx = c_active->x - shared_vertex->x;
-  double vy = c_active->y - shared_vertex->y;
-  double len = hypot(vx, vy);
-  if (len < 1e-6)
-    return;
-
-  double dir_x = -vx / len;
-  double dir_y = -vy / len;
-
-  if (shared_vertex->continuity == CONTINUITY_C1) {
-    c_other->x = shared_vertex->x - vx;
-    c_other->y = shared_vertex->y - vy;
-  } else if (shared_vertex->continuity == CONTINUITY_G1) {
-    double other_len =
-        hypot(c_other->x - shared_vertex->x, c_other->y - shared_vertex->y);
-    if (other_len < 1e-4)
-      other_len = len;
-    c_other->x = shared_vertex->x + dir_x * other_len;
-    c_other->y = shared_vertex->y + dir_y * other_len;
-  }
-}
-
 static void translate_connected_component(AppState *state, Point *start_point,
                                           double dx, double dy) {
   if (state == NULL || start_point == NULL) {
@@ -282,6 +237,15 @@ void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
 
     edge_list_solve_constraints(drag_state.state->edges,
                                 drag_state.selected_point);
+
+    if (drag_state.state != NULL && drag_state.state->points != NULL) {
+      for (PointNode *node = drag_state.state->points->head; node != NULL;
+           node = node->next) {
+        if (node->point != NULL && node->point->continuity != CONTINUITY_G0) {
+          point_enforce_continuity(node->point, NULL);
+        }
+      }
+    }
   } else if (drag_state.selected_bezier_edge != NULL &&
              drag_state.selected_bezier_edge->edge.type == EDGE_TYPE_BEZIER) {
     if (drag_state.selected_bezier_handle == 0) {
@@ -291,8 +255,11 @@ void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
       drag_state.selected_bezier_edge->edge.geometry.bezier.control2.x = next_x;
       drag_state.selected_bezier_edge->edge.geometry.bezier.control2.y = next_y;
     }
-    enforce_handle_continuity(drag_state.selected_bezier_edge,
-                              drag_state.selected_bezier_handle);
+
+    Point *v = (drag_state.selected_bezier_handle == 0)
+                   ? drag_state.selected_bezier_edge->edge.start
+                   : drag_state.selected_bezier_edge->edge.end;
+    point_enforce_continuity(v, drag_state.selected_bezier_edge);
   } else if (drag_state.selected_edge != NULL &&
              drag_state.selected_edge->edge.start != NULL) {
     double dx = next_x - last_drag_x;

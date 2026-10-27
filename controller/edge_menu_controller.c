@@ -153,6 +153,8 @@ static void edge_menu_set_type(GtkButton *button, gpointer user_data) {
       if (!edge_menu_state.edge->edge.end->continuity_set_by_user) {
         edge_menu_state.edge->edge.end->continuity = CONTINUITY_G1;
       }
+      point_enforce_continuity(edge_menu_state.edge->edge.start, NULL);
+      point_enforce_continuity(edge_menu_state.edge->edge.end, NULL);
     } else if (type == EDGE_TYPE_ARC) {
       edge_menu_set_arc_defaults(edge_menu_state.edge);
     } else {
@@ -285,12 +287,11 @@ static void edge_menu_create(GtkWidget *drawing_area) {
 
   GtkWidget *menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
 
-  GtkWidget *section_label = gtk_label_new("Typ krawędzi:");
+  GtkWidget *section_label = gtk_label_new("Edge type:");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
 
-  const char *type_labels[] = {"Odcinek prosty", "Krzywa Béziera",
-                               "Łuk okręgu"};
+  const char *type_labels[] = {"Straight", "Bezier", "Arc"};
   for (int i = 0; i < 3; i++) {
     GtkWidget *button = gtk_button_new_with_label(type_labels[i]);
     gtk_widget_set_halign(button, GTK_ALIGN_FILL);
@@ -302,7 +303,7 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
-  section_label = gtk_label_new("Zadana długość krawędzi:");
+  section_label = gtk_label_new("Length constraint:");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
 
@@ -312,14 +313,14 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_widget_set_hexpand(edge_menu_state.length_spin, TRUE);
   gtk_box_append(GTK_BOX(spin_box), edge_menu_state.length_spin);
 
-  GtkWidget *apply_len_btn = gtk_button_new_with_label("Ustaw");
+  GtkWidget *apply_len_btn = gtk_button_new_with_label("Set");
   g_signal_connect(apply_len_btn, "clicked",
                    G_CALLBACK(edge_menu_apply_length_cb), NULL);
   gtk_box_append(GTK_BOX(spin_box), apply_len_btn);
   gtk_box_append(GTK_BOX(menu_box), spin_box);
 
   GtkWidget *remove_len_btn =
-      gtk_button_new_with_label("Usuń ograniczenie długości");
+      gtk_button_new_with_label("Remove length constraint");
   g_signal_connect(remove_len_btn, "clicked",
                    G_CALLBACK(edge_menu_remove_length_cb), NULL);
   gtk_box_append(GTK_BOX(menu_box), remove_len_btn);
@@ -327,13 +328,12 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
-  section_label = gtk_label_new("Równoległość (litera K):");
+  section_label = gtk_label_new("Parallel constraint:");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
 
   GtkWidget *parallel_btn = gtk_menu_button_new();
-  gtk_menu_button_set_label(GTK_MENU_BUTTON(parallel_btn),
-                            "Połącz równolegle z...");
+  gtk_menu_button_set_label(GTK_MENU_BUTTON(parallel_btn), "Pair with edge...");
   GtkWidget *parallel_pop = gtk_popover_new();
   GtkWidget *parallel_list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
 
@@ -342,7 +342,7 @@ static void edge_menu_create(GtkWidget *drawing_area) {
     for (EdgeNode *node = edge_menu_state.state->edges->head; node != NULL;
          node = node->next) {
       char btn_text[64];
-      snprintf(btn_text, sizeof(btn_text), "Krawędź #%d", idx++);
+      snprintf(btn_text, sizeof(btn_text), "Edge #%d", idx++);
       GtkWidget *p_item = gtk_button_new_with_label(btn_text);
       g_signal_connect(p_item, "clicked",
                        G_CALLBACK(edge_menu_pair_parallel_cb), node);
@@ -353,7 +353,8 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_menu_button_set_popover(GTK_MENU_BUTTON(parallel_btn), parallel_pop);
   gtk_box_append(GTK_BOX(menu_box), parallel_btn);
 
-  GtkWidget *remove_par_btn = gtk_button_new_with_label("Usuń równoległość");
+  GtkWidget *remove_par_btn =
+      gtk_button_new_with_label("Remove parallel constraint");
   g_signal_connect(remove_par_btn, "clicked",
                    G_CALLBACK(edge_menu_remove_parallel_cb), NULL);
   gtk_box_append(GTK_BOX(menu_box), remove_par_btn);
@@ -361,8 +362,7 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
-  GtkWidget *insert_button =
-      gtk_button_new_with_label("Wstaw wierzchołek w tym punkcie");
+  GtkWidget *insert_button = gtk_button_new_with_label("Insert point");
   gtk_widget_set_halign(insert_button, GTK_ALIGN_FILL);
   gtk_box_append(GTK_BOX(menu_box), insert_button);
   g_signal_connect(insert_button, "clicked", G_CALLBACK(edge_menu_insert_point),

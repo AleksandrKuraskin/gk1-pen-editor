@@ -72,191 +72,6 @@ requirements.md
 <files>
 This section contains the contents of the repository's files.
 
-<file path="controller/point_menu_controller.c">
-#include "controller/point_menu_controller.h"
-
-#include <math.h>
-
-#include "config/config.h"
-
-typedef struct {
-  GtkWidget *drawing_area;
-  GtkWidget *popover;
-  AppState *state;
-  Point *point;
-} PointMenuState;
-
-static PointMenuState point_menu_state;
-
-static void point_menu_close(void) {
-  if (point_menu_state.popover != NULL) {
-    gtk_popover_popdown(GTK_POPOVER(point_menu_state.popover));
-    gtk_widget_set_visible(point_menu_state.popover, FALSE);
-  }
-  point_menu_state.point = NULL;
-}
-
-void point_menu_controller_dismiss(void) { point_menu_close(); }
-
-static void point_menu_destroy(void) {
-  if (point_menu_state.popover == NULL) {
-    return;
-  }
-
-  gtk_popover_popdown(GTK_POPOVER(point_menu_state.popover));
-  if (gtk_widget_get_parent(point_menu_state.popover) != NULL) {
-    gtk_widget_unparent(point_menu_state.popover);
-  }
-  point_menu_state.popover = NULL;
-}
-
-static void point_menu_remove_cb(GtkButton *button, gpointer user_data) {
-  (void)button;
-  (void)user_data;
-  if (point_menu_state.state == NULL || point_menu_state.point == NULL) {
-    point_menu_close();
-    return;
-  }
-
-  if (!app_state_remove_point(point_menu_state.state, point_menu_state.point)) {
-    point_menu_close();
-    return;
-  }
-
-  gtk_widget_queue_draw(point_menu_state.drawing_area);
-  point_menu_close();
-}
-
-static void point_menu_show(AppState *state, Point *point, double x, double y) {
-  if (state == NULL || point == NULL || point_menu_state.popover == NULL) {
-    return;
-  }
-
-  point_menu_state.state = state;
-  point_menu_state.point = point;
-  GdkRectangle pointing_to = {(int)lround(x), (int)lround(y), 1, 1};
-  gtk_popover_set_pointing_to(GTK_POPOVER(point_menu_state.popover),
-                              &pointing_to);
-  gtk_popover_popup(GTK_POPOVER(point_menu_state.popover));
-}
-
-Point *point_menu_find_point_near_cursor(AppState *state, double x, double y) {
-  if (state == NULL || state->points == NULL) {
-    return NULL;
-  }
-
-  for (PointNode *node = state->points->head; node != NULL; node = node->next) {
-    Point *point = node->point;
-    if (point == NULL) {
-      continue;
-    }
-
-    double dx = point->x - x;
-    double dy = point->y - y;
-    if (hypot(dx, dy) <= CONFIG_POINT_RADIUS + CONFIG_HOVER_OUTLINE_WIDTH) {
-      return point;
-    }
-  }
-
-  return NULL;
-}
-
-static void point_menu_set_continuity_cb(GtkButton *button,
-                                         gpointer user_data) {
-  (void)button;
-  ContinuityType c = (ContinuityType)GPOINTER_TO_INT(user_data);
-  if (point_menu_state.point != NULL) {
-    point_menu_state.point->continuity = c;
-    point_menu_state.point->continuity_set_by_user = TRUE;
-    gtk_widget_queue_draw(point_menu_state.drawing_area);
-  }
-  point_menu_close();
-}
-
-static void point_menu_secondary_click_cb(GtkGestureClick *gesture, int n_press,
-                                          double x, double y,
-                                          gpointer user_data) {
-  (void)n_press;
-  AppState *state = user_data;
-  if (state == NULL || point_menu_state.popover == NULL) {
-    return;
-  }
-
-  Point *point = point_menu_find_point_near_cursor(state, x, y);
-  if (point == NULL) {
-    point_menu_close();
-    return;
-  }
-
-  gtk_widget_set_visible(point_menu_state.popover, FALSE);
-  gtk_popover_popdown(GTK_POPOVER(point_menu_state.popover));
-  point_menu_show(state, point, x, y);
-  (void)gesture;
-}
-
-static void point_menu_create(GtkWidget *drawing_area) {
-  point_menu_state.drawing_area = drawing_area;
-  point_menu_state.popover = gtk_popover_new();
-  if (point_menu_state.popover == NULL) {
-    return;
-  }
-
-  gtk_widget_set_parent(point_menu_state.popover, drawing_area);
-
-  gtk_popover_set_autohide(GTK_POPOVER(point_menu_state.popover), TRUE);
-  g_signal_connect(drawing_area, "destroy", G_CALLBACK(point_menu_destroy),
-                   NULL);
-
-  GtkWidget *menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-  GtkWidget *section_label = gtk_label_new("Point");
-  gtk_widget_set_halign(section_label, GTK_ALIGN_START);
-  gtk_box_append(GTK_BOX(menu_box), section_label);
-
-  GtkWidget *remove_button = gtk_button_new_with_label("Remove point");
-  gtk_widget_set_halign(remove_button, GTK_ALIGN_FILL);
-  gtk_box_append(GTK_BOX(menu_box), remove_button);
-  g_signal_connect(remove_button, "clicked", G_CALLBACK(point_menu_remove_cb),
-                   NULL);
-
-  gtk_box_append(GTK_BOX(menu_box),
-                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-  gtk_box_append(GTK_BOX(menu_box),
-                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-  GtkWidget *cont_label = gtk_label_new("Klasa ciągłości węzła:");
-  gtk_widget_set_halign(cont_label, GTK_ALIGN_START);
-  gtk_box_append(GTK_BOX(menu_box), cont_label);
-
-  const char *cont_names[] = {"G0 (kąt ostry)", "G1 (gładki - kierunek)",
-                              "C1 (styczny - wektor)"};
-  for (int i = 0; i < 3; i++) {
-    GtkWidget *btn = gtk_button_new_with_label(cont_names[i]);
-    gtk_widget_set_halign(btn, GTK_ALIGN_FILL);
-    gtk_box_append(GTK_BOX(menu_box), btn);
-    g_signal_connect(btn, "clicked", G_CALLBACK(point_menu_set_continuity_cb),
-                     GINT_TO_POINTER(i));
-  }
-
-  gtk_popover_set_child(GTK_POPOVER(point_menu_state.popover), menu_box);
-}
-
-void point_menu_controller_connect(GtkWidget *drawing_area, AppState *state) {
-  if (drawing_area == NULL || state == NULL) {
-    return;
-  }
-
-  point_menu_state.state = state;
-  point_menu_create(drawing_area);
-
-  GtkGesture *secondary_click = gtk_gesture_click_new();
-  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(secondary_click),
-                                GDK_BUTTON_SECONDARY);
-  gtk_widget_add_controller(drawing_area,
-                            GTK_EVENT_CONTROLLER(secondary_click));
-  g_signal_connect(secondary_click, "pressed",
-                   G_CALLBACK(point_menu_secondary_click_cb), state);
-}
-</file>
-
 <file path="controller/point_menu_controller.h">
 #ifndef POLYPEN_POINT_MENU_CONTROLLER_H
 #define POLYPEN_POINT_MENU_CONTROLLER_H
@@ -488,6 +303,224 @@ Termin oddania zadania: 27–28 października.
 W trakcie tych zajęć odbędzie się część laboratoryjna.
 </file>
 
+<file path="controller/edge_menu_controller.h">
+#ifndef POLYPEN_EDGE_MENU_CONTROLLER_H
+#define POLYPEN_EDGE_MENU_CONTROLLER_H
+
+#include <gtk/gtk.h>
+
+#include "model/app_state.h"
+
+EdgeNode *edge_menu_find_edge_near_cursor(AppState *state, double x, double y,
+                                          double *closest_x,
+                                          double *closest_y);
+void edge_menu_controller_connect(GtkWidget *drawing_area, AppState *state);
+void edge_menu_controller_dismiss(void);
+
+#endif
+</file>
+
+<file path="controller/point_menu_controller.c">
+#include "controller/point_menu_controller.h"
+
+#include <math.h>
+
+#include "config/config.h"
+
+typedef struct {
+  GtkWidget *drawing_area;
+  GtkWidget *popover;
+  AppState *state;
+  Point *point;
+} PointMenuState;
+
+static PointMenuState point_menu_state;
+
+static void point_menu_close(void) {
+  if (point_menu_state.popover != NULL) {
+    gtk_popover_popdown(GTK_POPOVER(point_menu_state.popover));
+    gtk_widget_set_visible(point_menu_state.popover, FALSE);
+  }
+  point_menu_state.point = NULL;
+}
+
+void point_menu_controller_dismiss(void) { point_menu_close(); }
+
+static void point_menu_destroy(void) {
+  if (point_menu_state.popover == NULL) {
+    return;
+  }
+
+  gtk_popover_popdown(GTK_POPOVER(point_menu_state.popover));
+  if (gtk_widget_get_parent(point_menu_state.popover) != NULL) {
+    gtk_widget_unparent(point_menu_state.popover);
+  }
+  point_menu_state.popover = NULL;
+}
+
+static void point_menu_remove_cb(GtkButton *button, gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  if (point_menu_state.state == NULL || point_menu_state.point == NULL) {
+    point_menu_close();
+    return;
+  }
+
+  if (!app_state_remove_point(point_menu_state.state, point_menu_state.point)) {
+    point_menu_close();
+    return;
+  }
+
+  gtk_widget_queue_draw(point_menu_state.drawing_area);
+  point_menu_close();
+}
+
+static void point_menu_show(AppState *state, Point *point, double x, double y) {
+  if (state == NULL || point == NULL || point_menu_state.popover == NULL) {
+    return;
+  }
+
+  point_menu_state.state = state;
+  point_menu_state.point = point;
+  GdkRectangle pointing_to = {(int)lround(x), (int)lround(y), 1, 1};
+  gtk_popover_set_pointing_to(GTK_POPOVER(point_menu_state.popover),
+                              &pointing_to);
+  gtk_popover_popup(GTK_POPOVER(point_menu_state.popover));
+}
+
+Point *point_menu_find_point_near_cursor(AppState *state, double x, double y) {
+  if (state == NULL || state->points == NULL) {
+    return NULL;
+  }
+
+  for (PointNode *node = state->points->head; node != NULL; node = node->next) {
+    Point *point = node->point;
+    if (point == NULL) {
+      continue;
+    }
+
+    double dx = point->x - x;
+    double dy = point->y - y;
+    if (hypot(dx, dy) <= CONFIG_POINT_RADIUS + CONFIG_HOVER_OUTLINE_WIDTH) {
+      return point;
+    }
+  }
+
+  return NULL;
+}
+
+static void point_menu_set_continuity_cb(GtkButton *button,
+                                         gpointer user_data) {
+  (void)button;
+  ContinuityType c = (ContinuityType)GPOINTER_TO_INT(user_data);
+  if (point_menu_state.point != NULL) {
+    Point *p = point_menu_state.point;
+    p->continuity = c;
+    p->continuity_set_by_user = TRUE;
+
+    if (c == CONTINUITY_G1) {
+      EdgeNode *edges[2] = {p->prev_edge, p->next_edge};
+      for (int i = 0; i < 2; i++) {
+        if (edges[i] != NULL && edges[i]->edge.type == EDGE_TYPE_ARC) {
+          Point *other = (edges[i]->edge.start == p) ? edges[i]->edge.end
+                                                     : edges[i]->edge.start;
+          if (other != NULL && other->continuity == CONTINUITY_G1) {
+            other->continuity = CONTINUITY_G0;
+          }
+        }
+      }
+    }
+
+    point_enforce_continuity(p, NULL);
+    gtk_widget_queue_draw(point_menu_state.drawing_area);
+  }
+  point_menu_close();
+}
+
+static void point_menu_secondary_click_cb(GtkGestureClick *gesture, int n_press,
+                                          double x, double y,
+                                          gpointer user_data) {
+  (void)n_press;
+  AppState *state = user_data;
+  if (state == NULL || point_menu_state.popover == NULL) {
+    return;
+  }
+
+  Point *point = point_menu_find_point_near_cursor(state, x, y);
+  if (point == NULL) {
+    point_menu_close();
+    return;
+  }
+
+  gtk_widget_set_visible(point_menu_state.popover, FALSE);
+  gtk_popover_popdown(GTK_POPOVER(point_menu_state.popover));
+  point_menu_show(state, point, x, y);
+  (void)gesture;
+}
+
+static void point_menu_create(GtkWidget *drawing_area) {
+  point_menu_state.drawing_area = drawing_area;
+  point_menu_state.popover = gtk_popover_new();
+  if (point_menu_state.popover == NULL) {
+    return;
+  }
+
+  gtk_widget_set_parent(point_menu_state.popover, drawing_area);
+
+  gtk_popover_set_autohide(GTK_POPOVER(point_menu_state.popover), TRUE);
+  g_signal_connect(drawing_area, "destroy", G_CALLBACK(point_menu_destroy),
+                   NULL);
+
+  GtkWidget *menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  GtkWidget *section_label = gtk_label_new("Point");
+  gtk_widget_set_halign(section_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(menu_box), section_label);
+
+  GtkWidget *remove_button = gtk_button_new_with_label("Remove point");
+  gtk_widget_set_halign(remove_button, GTK_ALIGN_FILL);
+  gtk_box_append(GTK_BOX(menu_box), remove_button);
+  g_signal_connect(remove_button, "clicked", G_CALLBACK(point_menu_remove_cb),
+                   NULL);
+
+  gtk_box_append(GTK_BOX(menu_box),
+                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+  gtk_box_append(GTK_BOX(menu_box),
+                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+  GtkWidget *cont_label = gtk_label_new("Klasa ciągłości węzła:");
+  gtk_widget_set_halign(cont_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(menu_box), cont_label);
+
+  const char *cont_names[] = {"G0 (kąt ostry)", "G1 (gładki - kierunek)",
+                              "C1 (styczny - wektor)"};
+  for (int i = 0; i < 3; i++) {
+    GtkWidget *btn = gtk_button_new_with_label(cont_names[i]);
+    gtk_widget_set_halign(btn, GTK_ALIGN_FILL);
+    gtk_box_append(GTK_BOX(menu_box), btn);
+    g_signal_connect(btn, "clicked", G_CALLBACK(point_menu_set_continuity_cb),
+                     GINT_TO_POINTER(i));
+  }
+
+  gtk_popover_set_child(GTK_POPOVER(point_menu_state.popover), menu_box);
+}
+
+void point_menu_controller_connect(GtkWidget *drawing_area, AppState *state) {
+  if (drawing_area == NULL || state == NULL) {
+    return;
+  }
+
+  point_menu_state.state = state;
+  point_menu_create(drawing_area);
+
+  GtkGesture *secondary_click = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(secondary_click),
+                                GDK_BUTTON_SECONDARY);
+  gtk_widget_add_controller(drawing_area,
+                            GTK_EVENT_CONTROLLER(secondary_click));
+  g_signal_connect(secondary_click, "pressed",
+                   G_CALLBACK(point_menu_secondary_click_cb), state);
+}
+</file>
+
 <file path="app/main.c">
 #include <cairo.h>
 #include <gtk/gtk.h>
@@ -570,8 +603,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
   gtk_window_set_titlebar(GTK_WINDOW(window), header);
 
   GtkWidget *radio_bresenham = gtk_check_button_new_with_label("Bresenham");
-  GtkWidget *radio_cairo =
-      gtk_check_button_new_with_label("Cairo (biblioteczny)");
+  GtkWidget *radio_cairo = gtk_check_button_new_with_label("Cairo");
   gtk_check_button_set_group(GTK_CHECK_BUTTON(radio_cairo),
                              GTK_CHECK_BUTTON(radio_bresenham));
   gtk_check_button_set_active(GTK_CHECK_BUTTON(radio_bresenham), TRUE);
@@ -583,7 +615,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
   gtk_box_append(GTK_BOX(algo_box), radio_cairo);
   gtk_header_bar_pack_start(GTK_HEADER_BAR(header), algo_box);
 
-  GtkWidget *help_btn = gtk_button_new_with_label("Dokumentacja");
+  GtkWidget *help_btn = gtk_button_new_with_label("Documentation");
   g_signal_connect(help_btn, "clicked", G_CALLBACK(show_documentation_dialog),
                    window);
   gtk_header_bar_pack_end(GTK_HEADER_BAR(header), help_btn);
@@ -622,26 +654,11 @@ int main(int argc, char **argv) {
 }
 </file>
 
-<file path="controller/edge_menu_controller.h">
-#ifndef POLYPEN_EDGE_MENU_CONTROLLER_H
-#define POLYPEN_EDGE_MENU_CONTROLLER_H
-
-#include <gtk/gtk.h>
-
-#include "model/app_state.h"
-
-EdgeNode *edge_menu_find_edge_near_cursor(AppState *state, double x, double y,
-                                          double *closest_x,
-                                          double *closest_y);
-void edge_menu_controller_connect(GtkWidget *drawing_area, AppState *state);
-void edge_menu_controller_dismiss(void);
-
-#endif
-</file>
-
 <file path="model/point.c">
 #include "model/point.h"
+#include "model/edge.h"
 
+#include <math.h>
 #include <stdlib.h>
 
 int point_attach_edge(Point *point, struct EdgeNode *edge) {
@@ -758,6 +775,91 @@ void point_list_append(PointList *list, Point *point) {
 
   list->count += 1;
 }
+
+void point_enforce_continuity(Point *v, struct EdgeNode *driving_edge) {
+  if (v == NULL || v->continuity == CONTINUITY_G0) {
+    return;
+  }
+
+  EdgeNode *e1 = v->prev_edge;
+  EdgeNode *e2 = v->next_edge;
+  if (e1 == NULL || e2 == NULL) {
+    return;
+  }
+
+  if (e1->edge.type == EDGE_TYPE_BEZIER && e2->edge.type == EDGE_TYPE_BEZIER) {
+    Point *c1 = (e1->edge.start == v) ? &e1->edge.geometry.bezier.control1
+                                      : &e1->edge.geometry.bezier.control2;
+    Point *c2 = (e2->edge.start == v) ? &e2->edge.geometry.bezier.control1
+                                      : &e2->edge.geometry.bezier.control2;
+
+    Point *c_driver = (driving_edge == e2) ? c2 : c1;
+    Point *c_target = (driving_edge == e2) ? c1 : c2;
+
+    double vx = c_driver->x - v->x;
+    double vy = c_driver->y - v->y;
+    double len = hypot(vx, vy);
+    if (len < 1e-5)
+      return;
+
+    if (v->continuity == CONTINUITY_C1) {
+      c_target->x = v->x - vx;
+      c_target->y = v->y - vy;
+    } else if (v->continuity == CONTINUITY_G1) {
+      double target_len = hypot(c_target->x - v->x, c_target->y - v->y);
+      if (target_len < 1.0)
+        target_len = len;
+      c_target->x = v->x - (vx / len) * target_len;
+      c_target->y = v->y - (vy / len) * target_len;
+    }
+    return;
+  }
+
+  EdgeNode *e_bez = (e1->edge.type == EDGE_TYPE_BEZIER)
+                        ? e1
+                        : ((e2->edge.type == EDGE_TYPE_BEZIER) ? e2 : NULL);
+  EdgeNode *e_str = (e1->edge.type == EDGE_TYPE_STRAIGHT)
+                        ? e1
+                        : ((e2->edge.type == EDGE_TYPE_STRAIGHT) ? e2 : NULL);
+
+  if (e_bez != NULL && e_str != NULL) {
+    Point *c_bez = (e_bez->edge.start == v)
+                       ? &e_bez->edge.geometry.bezier.control1
+                       : &e_bez->edge.geometry.bezier.control2;
+    Point *p_other =
+        (e_str->edge.start == v) ? e_str->edge.end : e_str->edge.start;
+    if (p_other == NULL)
+      return;
+
+    double sx = v->x - p_other->x;
+    double sy = v->y - p_other->y;
+    double slen = hypot(sx, sy);
+    if (slen < 1e-5)
+      return;
+    double tx = sx / slen;
+    double ty = sy / slen;
+
+    if (v->continuity == CONTINUITY_C1) {
+      c_bez->x = v->x + tx * (slen / 3.0);
+      c_bez->y = v->y + ty * (slen / 3.0);
+    } else if (v->continuity == CONTINUITY_G1) {
+      double cur_len = hypot(c_bez->x - v->x, c_bez->y - v->y);
+      if (cur_len < 1.0)
+        cur_len = slen / 3.0;
+
+      if (driving_edge == e_bez) {
+        double dot = (c_bez->x - v->x) * tx + (c_bez->y - v->y) * ty;
+        if (dot < 5.0)
+          dot = 5.0;
+        c_bez->x = v->x + tx * dot;
+        c_bez->y = v->y + ty * dot;
+      } else {
+        c_bez->x = v->x + tx * cur_len;
+        c_bez->y = v->y + ty * cur_len;
+      }
+    }
+  }
+}
 </file>
 
 <file path="model/point.h">
@@ -803,37 +905,7 @@ PointList *point_list_create(void);
 void point_list_destroy(PointList *list);
 void point_list_append(PointList *list, Point *point);
 
-#endif
-</file>
-
-<file path="controller/drawing_area_controller.h">
-#ifndef POLYPEN_DRAWING_AREA_CONTROLLER_H
-#define POLYPEN_DRAWING_AREA_CONTROLLER_H
-
-#include <gtk/gtk.h>
-
-#include "model/app_state.h"
-
-typedef struct {
-  AppState *state;
-  Point *selected_point;
-  EdgeNode *selected_bezier_edge;
-  int selected_bezier_handle;
-  EdgeNode *selected_edge;
-  gboolean dragging;
-} DragState;
-
-void drawing_area_update_hover_state(AppState *state, double x, double y);
-
-Point *drawing_area_find_point_under_cursor(AppState *state, double x,
-                                            double y);
-void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state);
-void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
-                            double y, gpointer user_data);
-void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
-                           double y, gpointer user_data);
-void drawing_area_release_cb(GtkGestureClick *gesture, int n_press, double x,
-                             double y, gpointer user_data);
+void point_enforce_continuity(Point *point, struct EdgeNode *driving_edge);
 
 #endif
 </file>
@@ -966,6 +1038,38 @@ dkms.conf
 #define CONFIG_BEZIER_MIN_SEGMENTS 8
 #define CONFIG_BEZIER_MAX_SEGMENTS 200
 #define CONFIG_BEZIER_SEGMENT_LENGTH 16.0
+
+#endif
+</file>
+
+<file path="controller/drawing_area_controller.h">
+#ifndef POLYPEN_DRAWING_AREA_CONTROLLER_H
+#define POLYPEN_DRAWING_AREA_CONTROLLER_H
+
+#include <gtk/gtk.h>
+
+#include "model/app_state.h"
+
+typedef struct {
+  AppState *state;
+  Point *selected_point;
+  EdgeNode *selected_bezier_edge;
+  int selected_bezier_handle;
+  EdgeNode *selected_edge;
+  gboolean dragging;
+} DragState;
+
+void drawing_area_update_hover_state(AppState *state, double x, double y);
+
+Point *drawing_area_find_point_under_cursor(AppState *state, double x,
+                                            double y);
+void drawing_area_connect_drag(GtkWidget *drawing_area, AppState *state);
+void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
+                            double y, gpointer user_data);
+void drawing_area_click_cb(GtkGestureClick *gesture, int n_press, double x,
+                           double y, gpointer user_data);
+void drawing_area_release_cb(GtkGestureClick *gesture, int n_press, double x,
+                             double y, gpointer user_data);
 
 #endif
 </file>
@@ -1126,6 +1230,8 @@ static void edge_menu_set_type(GtkButton *button, gpointer user_data) {
       if (!edge_menu_state.edge->edge.end->continuity_set_by_user) {
         edge_menu_state.edge->edge.end->continuity = CONTINUITY_G1;
       }
+      point_enforce_continuity(edge_menu_state.edge->edge.start, NULL);
+      point_enforce_continuity(edge_menu_state.edge->edge.end, NULL);
     } else if (type == EDGE_TYPE_ARC) {
       edge_menu_set_arc_defaults(edge_menu_state.edge);
     } else {
@@ -1258,12 +1364,11 @@ static void edge_menu_create(GtkWidget *drawing_area) {
 
   GtkWidget *menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
 
-  GtkWidget *section_label = gtk_label_new("Typ krawędzi:");
+  GtkWidget *section_label = gtk_label_new("Edge type:");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
 
-  const char *type_labels[] = {"Odcinek prosty", "Krzywa Béziera",
-                               "Łuk okręgu"};
+  const char *type_labels[] = {"Straight", "Bezier", "Arc"};
   for (int i = 0; i < 3; i++) {
     GtkWidget *button = gtk_button_new_with_label(type_labels[i]);
     gtk_widget_set_halign(button, GTK_ALIGN_FILL);
@@ -1275,7 +1380,7 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
-  section_label = gtk_label_new("Zadana długość krawędzi:");
+  section_label = gtk_label_new("Length constraint:");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
 
@@ -1285,14 +1390,14 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_widget_set_hexpand(edge_menu_state.length_spin, TRUE);
   gtk_box_append(GTK_BOX(spin_box), edge_menu_state.length_spin);
 
-  GtkWidget *apply_len_btn = gtk_button_new_with_label("Ustaw");
+  GtkWidget *apply_len_btn = gtk_button_new_with_label("Set");
   g_signal_connect(apply_len_btn, "clicked",
                    G_CALLBACK(edge_menu_apply_length_cb), NULL);
   gtk_box_append(GTK_BOX(spin_box), apply_len_btn);
   gtk_box_append(GTK_BOX(menu_box), spin_box);
 
   GtkWidget *remove_len_btn =
-      gtk_button_new_with_label("Usuń ograniczenie długości");
+      gtk_button_new_with_label("Remove length constraint");
   g_signal_connect(remove_len_btn, "clicked",
                    G_CALLBACK(edge_menu_remove_length_cb), NULL);
   gtk_box_append(GTK_BOX(menu_box), remove_len_btn);
@@ -1300,13 +1405,12 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
-  section_label = gtk_label_new("Równoległość (litera K):");
+  section_label = gtk_label_new("Parallel constraint:");
   gtk_widget_set_halign(section_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), section_label);
 
   GtkWidget *parallel_btn = gtk_menu_button_new();
-  gtk_menu_button_set_label(GTK_MENU_BUTTON(parallel_btn),
-                            "Połącz równolegle z...");
+  gtk_menu_button_set_label(GTK_MENU_BUTTON(parallel_btn), "Pair with edge...");
   GtkWidget *parallel_pop = gtk_popover_new();
   GtkWidget *parallel_list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
 
@@ -1315,7 +1419,7 @@ static void edge_menu_create(GtkWidget *drawing_area) {
     for (EdgeNode *node = edge_menu_state.state->edges->head; node != NULL;
          node = node->next) {
       char btn_text[64];
-      snprintf(btn_text, sizeof(btn_text), "Krawędź #%d", idx++);
+      snprintf(btn_text, sizeof(btn_text), "Edge #%d", idx++);
       GtkWidget *p_item = gtk_button_new_with_label(btn_text);
       g_signal_connect(p_item, "clicked",
                        G_CALLBACK(edge_menu_pair_parallel_cb), node);
@@ -1326,7 +1430,8 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_menu_button_set_popover(GTK_MENU_BUTTON(parallel_btn), parallel_pop);
   gtk_box_append(GTK_BOX(menu_box), parallel_btn);
 
-  GtkWidget *remove_par_btn = gtk_button_new_with_label("Usuń równoległość");
+  GtkWidget *remove_par_btn =
+      gtk_button_new_with_label("Remove parallel constraint");
   g_signal_connect(remove_par_btn, "clicked",
                    G_CALLBACK(edge_menu_remove_parallel_cb), NULL);
   gtk_box_append(GTK_BOX(menu_box), remove_par_btn);
@@ -1334,8 +1439,7 @@ static void edge_menu_create(GtkWidget *drawing_area) {
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
-  GtkWidget *insert_button =
-      gtk_button_new_with_label("Wstaw wierzchołek w tym punkcie");
+  GtkWidget *insert_button = gtk_button_new_with_label("Insert point");
   gtk_widget_set_halign(insert_button, GTK_ALIGN_FILL);
   gtk_box_append(GTK_BOX(menu_box), insert_button);
   g_signal_connect(insert_button, "clicked", G_CALLBACK(edge_menu_insert_point),
@@ -1725,6 +1829,32 @@ void edge_list_solve_constraints(EdgeList *list, Point *fixed_point);
 #endif
 </file>
 
+<file path="Makefile">
+CC ?= gcc
+CFLAGS ?= -Wall -Wextra -O2 -I. $(shell pkg-config --cflags gtk4)
+LDFLAGS ?= $(shell pkg-config --libs gtk4) -lm
+
+TARGET = polypen
+SRCS = app/main.c controller/drawing_area_controller.c controller/edge_menu_controller.c controller/point_menu_controller.c model/app_state.c model/edge.c model/point.c view/pixel_buffer.c view/renderer.c
+OBJS = $(SRCS:.c=.o)
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJS) $(TARGET)
+
+run: $(TARGET)
+	./$(TARGET)
+
+.PHONY: all clean run
+</file>
+
 <file path="model/app_state.c">
 #include "model/app_state.h"
 
@@ -2013,32 +2143,6 @@ int app_state_insert_point(AppState *state, EdgeNode *edge, double x,
 
   return 1;
 }
-</file>
-
-<file path="Makefile">
-CC ?= gcc
-CFLAGS ?= -Wall -Wextra -O2 -I. $(shell pkg-config --cflags gtk4)
-LDFLAGS ?= $(shell pkg-config --libs gtk4) -lm
-
-TARGET = polypen
-SRCS = app/main.c controller/drawing_area_controller.c controller/edge_menu_controller.c controller/point_menu_controller.c model/app_state.c model/edge.c model/point.c view/pixel_buffer.c view/renderer.c
-OBJS = $(SRCS:.c=.o)
-
-all: $(TARGET)
-
-$(TARGET): $(OBJS)
-	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
-
-clean:
-	rm -f $(OBJS) $(TARGET)
-
-run: $(TARGET)
-	./$(TARGET)
-
-.PHONY: all clean run
 </file>
 
 <file path="view/renderer.c">
@@ -2464,51 +2568,6 @@ static void drawing_area_clamp_to_canvas(GtkWidget *widget, double *x,
   *y = fmin(fmax(*y, 0.0), (double)height);
 }
 
-static void enforce_handle_continuity(EdgeNode *active_edge, int handle_idx) {
-  if (active_edge == NULL || active_edge->edge.type != EDGE_TYPE_BEZIER)
-    return;
-
-  Point *shared_vertex =
-      (handle_idx == 0) ? active_edge->edge.start : active_edge->edge.end;
-  Point *c_active = (handle_idx == 0)
-                        ? &active_edge->edge.geometry.bezier.control1
-                        : &active_edge->edge.geometry.bezier.control2;
-
-  if (shared_vertex == NULL || shared_vertex->continuity == CONTINUITY_G0)
-    return;
-
-  EdgeNode *other = (shared_vertex->prev_edge == active_edge)
-                        ? shared_vertex->next_edge
-                        : shared_vertex->prev_edge;
-  if (other == NULL || other->edge.type != EDGE_TYPE_BEZIER)
-    return;
-
-  Point *c_other = (other->edge.start == shared_vertex)
-                       ? &other->edge.geometry.bezier.control1
-                       : &other->edge.geometry.bezier.control2;
-
-  double vx = c_active->x - shared_vertex->x;
-  double vy = c_active->y - shared_vertex->y;
-  double len = hypot(vx, vy);
-  if (len < 1e-6)
-    return;
-
-  double dir_x = -vx / len;
-  double dir_y = -vy / len;
-
-  if (shared_vertex->continuity == CONTINUITY_C1) {
-    c_other->x = shared_vertex->x - vx;
-    c_other->y = shared_vertex->y - vy;
-  } else if (shared_vertex->continuity == CONTINUITY_G1) {
-    double other_len =
-        hypot(c_other->x - shared_vertex->x, c_other->y - shared_vertex->y);
-    if (other_len < 1e-4)
-      other_len = len;
-    c_other->x = shared_vertex->x + dir_x * other_len;
-    c_other->y = shared_vertex->y + dir_y * other_len;
-  }
-}
-
 static void translate_connected_component(AppState *state, Point *start_point,
                                           double dx, double dy) {
   if (state == NULL || start_point == NULL) {
@@ -2718,6 +2777,8 @@ void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
       }
     }
 
+    point_enforce_continuity(drag_state.selected_point, NULL);
+
     edge_list_solve_constraints(drag_state.state->edges,
                                 drag_state.selected_point);
   } else if (drag_state.selected_bezier_edge != NULL &&
@@ -2729,8 +2790,11 @@ void drawing_area_motion_cb(GtkEventControllerMotion *controller, double x,
       drag_state.selected_bezier_edge->edge.geometry.bezier.control2.x = next_x;
       drag_state.selected_bezier_edge->edge.geometry.bezier.control2.y = next_y;
     }
-    enforce_handle_continuity(drag_state.selected_bezier_edge,
-                              drag_state.selected_bezier_handle);
+
+    Point *v = (drag_state.selected_bezier_handle == 0)
+                   ? drag_state.selected_bezier_edge->edge.start
+                   : drag_state.selected_bezier_edge->edge.end;
+    point_enforce_continuity(v, drag_state.selected_bezier_edge);
   } else if (drag_state.selected_edge != NULL &&
              drag_state.selected_edge->edge.start != NULL) {
     double dx = next_x - last_drag_x;

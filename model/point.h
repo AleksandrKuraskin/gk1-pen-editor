@@ -40,4 +40,6 @@ PointList *point_list_create(void);
 void point_list_destroy(PointList *list);
 void point_list_append(PointList *list, Point *point);
 
+void point_enforce_continuity(Point *point, struct EdgeNode *driving_edge);
+
 #endif

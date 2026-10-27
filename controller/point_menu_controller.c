@@ -91,8 +91,24 @@ static void point_menu_set_continuity_cb(GtkButton *button,
   (void)button;
   ContinuityType c = (ContinuityType)GPOINTER_TO_INT(user_data);
   if (point_menu_state.point != NULL) {
-    point_menu_state.point->continuity = c;
-    point_menu_state.point->continuity_set_by_user = TRUE;
+    Point *p = point_menu_state.point;
+    p->continuity = c;
+    p->continuity_set_by_user = TRUE;
+
+    if (c == CONTINUITY_G1) {
+      EdgeNode *edges[2] = {p->prev_edge, p->next_edge};
+      for (int i = 0; i < 2; i++) {
+        if (edges[i] != NULL && edges[i]->edge.type == EDGE_TYPE_ARC) {
+          Point *other = (edges[i]->edge.start == p) ? edges[i]->edge.end
+                                                     : edges[i]->edge.start;
+          if (other != NULL && other->continuity == CONTINUITY_G1) {
+            other->continuity = CONTINUITY_G0;
+          }
+        }
+      }
+    }
+
+    point_enforce_continuity(p, NULL);
     gtk_widget_queue_draw(point_menu_state.drawing_area);
   }
   point_menu_close();
@@ -147,12 +163,11 @@ static void point_menu_create(GtkWidget *drawing_area) {
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-  GtkWidget *cont_label = gtk_label_new("Klasa ciągłości węzła:");
+  GtkWidget *cont_label = gtk_label_new("Continuity:");
   gtk_widget_set_halign(cont_label, GTK_ALIGN_START);
   gtk_box_append(GTK_BOX(menu_box), cont_label);
 
-  const char *cont_names[] = {"G0 (kąt ostry)", "G1 (gładki - kierunek)",
-                              "C1 (styczny - wektor)"};
+  const char *cont_names[] = {"G0", "G1", "C1"};
   for (int i = 0; i < 3; i++) {
     GtkWidget *btn = gtk_button_new_with_label(cont_names[i]);
     gtk_widget_set_halign(btn, GTK_ALIGN_FILL);

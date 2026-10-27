@@ -20,45 +20,54 @@ static void show_documentation_dialog(GtkButton *btn, gpointer user_data) {
   (void)btn;
   GtkWindow *parent = user_data;
   GtkWidget *dialog = gtk_window_new();
-  gtk_window_set_title(GTK_WINDOW(dialog), "Dokumentacja i Instrukcja Obsługi");
+  gtk_window_set_title(GTK_WINDOW(dialog), "Dokumentacja programu");
   gtk_window_set_transient_for(GTK_WINDOW(dialog), parent);
   gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
-  gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 500);
+  gtk_window_set_default_size(GTK_WINDOW(dialog), 720, 520);
 
   GtkWidget *scrolled = gtk_scrolled_window_new();
   GtkWidget *label = gtk_label_new(
-      "POLYPEN - EDYTOR WIELOKĄTÓW KRZYWOLINIOWYCH\n\n"
-      "1. OBSŁUGA MYSZY I EDYCJA:\n"
-      " - Przeciąganie LPM: przesuwanie wierzchołka lub punktu kontrolnego "
-      "Béziera.\n"
-      " - Przeciąganie z SHIFT + LPM: przesuwanie całego wielokąta.\n"
-      " - Kliknięcie PPM na wierzchołek: menu usuwania wierzchołka i wyboru "
+      "DOKUMENTACJA SYSTEMU POLYPEN\n"
+      "Edytor wielokątów i wielokątów krzywoliniowych\n\n"
+      "1. OBSŁUGA INTERFEJSU I EDYCJA:\n"
+      " - Przeciąganie wierzchołka: LPM na wierzchołek pozwala na zmianę jego "
+      "położenia.\n"
+      " - Przeciąganie krawędzi: kliknięcie i przeciągnięcie krawędzi przesuwa "
+      "cały wielokąt.\n"
+      " - Przeciąganie punktu kontrolnego: zmiana kształtu segmentu Béziera.\n"
+      " - Menu wierzchołka (PPM): usuwanie wierzchołka oraz wybór klasy "
       "ciągłości (G0, G1, C1).\n"
-      " - Kliknięcie PPM na krawędź: menu zmiany typu (odcinek, Bézier, łuk), "
-      "dodania punktu oraz więzów.\n\n"
-      "2. OGRANICZENIA GEOMETRYCZNE (RELACJE):\n"
-      " - Zadana długość krawędzi (domyślnie bieżąca długość z możliwością "
-      "edycji).\n"
-      " - Równoległość dwóch krawędzi (dla osób o nazwisku na literę K).\n"
-      " - Solver więzów działa w pętli relaksacyjnej z wagowym rzutowaniem "
-      "współrzędnych.\n"
-      " - Wstawienie lub usunięcie wierzchołka automatycznie usuwa sprzeczne "
-      "ograniczenia.\n\n"
-      "3. CIĄGŁOŚĆ W WĘZŁACH BÉZIERA:\n"
-      " - G0: wspólna pozycja, niezależne kierunki stycznych.\n"
-      " - G1 (domyślna dla K): współliniowość wektorów stycznych z zachowaniem "
-      "długości uchwytów.\n"
-      " - C1: jednakowe wektory pochodnych (ścisła symetria wektorowa).\n\n"
-      "4. ALGORYTMY RYSOWANIA:\n"
-      " - Wybór algorytmu: radio buttony w pasku nagłówka (Bresenham vs "
-      "Cairo).\n"
-      " - Krzywe Béziera: algorytm przyrostowy w bazie potęgowej z różnicami "
-      "skończonymi (Forward Differences).\n");
+      " - Menu krawędzi (PPM): zmiana typu (odcinek, Bézier, łuk), dodanie "
+      "wierzchołka oraz nakładanie i usuwanie ograniczeń.\n\n"
+      "2. OGRANICZENIA GEOMETRYCZNE:\n"
+      " - Zadana długość krawędzi: utrzymywanie stałej odległości między "
+      "końcami segmentu.\n"
+      " - Równoległość dwóch krawędzi: wymuszenie współliniowości wektorów "
+      "kierunkowych wybranej pary krawędzi.\n"
+      " - Solver ograniczeń: iteracyjny algorytm relaksacyjny korygujący "
+      "położenie wierzchołków z uwzględnieniem punktu aktualnie "
+      "przeciąganego.\n"
+      " - Modyfikacja topologii: wstawienie lub usunięcie wierzchołka usuwa "
+      "powiązane relacje geometryczne.\n\n"
+      "3. KLASY CIĄGŁOŚCI W WĘZŁACH:\n"
+      " - G0: ciągłość położenia (wspólny wierzchołek, niezależne kierunki "
+      "stycznych).\n"
+      " - G1: ciągłość kierunku (jednostkowego wektora stycznego). Punkty "
+      "kontrolne leżą na wspólnej prostej przechodzącej przez wierzchołek.\n"
+      " - C1: ciągłość wektora stycznego (równość wektorów pochodnych, "
+      "symetria uchwytów względem węzła).\n"
+      " - Łuki okręgów: co najwyżej jeden koniec danego łuku może posiadać "
+      "ciągłość G1.\n\n"
+      "4. ALGORYTMY RENDEROWANIA:\n"
+      " - Przełącznik rasteryzacji: wybór pomiędzy własną implementacją "
+      "algorytmu Bresenhama a algorytmem bibliotecznym Cairo.\n"
+      " - Segmenty Béziera: wyznaczanie punktów metodą przyrostową w bazie "
+      "potęgowej z wykorzystaniem różnic skończonych trzeciego rzędu.\n");
   gtk_label_set_wrap(GTK_LABEL(label), TRUE);
-  gtk_widget_set_margin_start(label, 16);
-  gtk_widget_set_margin_end(label, 16);
-  gtk_widget_set_margin_top(label, 16);
-  gtk_widget_set_margin_bottom(label, 16);
+  gtk_widget_set_margin_start(label, 20);
+  gtk_widget_set_margin_end(label, 20);
+  gtk_widget_set_margin_top(label, 20);
+  gtk_widget_set_margin_bottom(label, 20);
 
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), label);
   gtk_window_set_child(GTK_WINDOW(dialog), scrolled);
@@ -79,8 +88,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
   gtk_window_set_titlebar(GTK_WINDOW(window), header);
 
   GtkWidget *radio_bresenham = gtk_check_button_new_with_label("Bresenham");
-  GtkWidget *radio_cairo =
-      gtk_check_button_new_with_label("Cairo (biblioteczny)");
+  GtkWidget *radio_cairo = gtk_check_button_new_with_label("Cairo");
   gtk_check_button_set_group(GTK_CHECK_BUTTON(radio_cairo),
                              GTK_CHECK_BUTTON(radio_bresenham));
   gtk_check_button_set_active(GTK_CHECK_BUTTON(radio_bresenham), TRUE);
@@ -92,7 +100,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
   gtk_box_append(GTK_BOX(algo_box), radio_cairo);
   gtk_header_bar_pack_start(GTK_HEADER_BAR(header), algo_box);
 
-  GtkWidget *help_btn = gtk_button_new_with_label("Dokumentacja");
+  GtkWidget *help_btn = gtk_button_new_with_label("Documentation");
   g_signal_connect(help_btn, "clicked", G_CALLBACK(show_documentation_dialog),
                    window);
   gtk_header_bar_pack_end(GTK_HEADER_BAR(header), help_btn);
