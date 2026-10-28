@@ -1,6 +1,5 @@
 #include "view/overlay.h"
 #include "config/config.h"
-#include <math.h>
 #include <stdio.h>
 
 void overlay_set_source_argb(cairo_t *cr, uint32_t color) {
