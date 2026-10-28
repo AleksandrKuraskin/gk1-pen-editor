@@ -129,3 +129,9 @@ Dokumentacja powinna zawierać co najmniej:
 Termin oddania zadania: 27–28 października.
 
 W trakcie tych zajęć odbędzie się część laboratoryjna.
+
+
+### 11. Laboratoria oceniane
+
+Co dodać:
+ - Antialiasing metodą 'multisampling';

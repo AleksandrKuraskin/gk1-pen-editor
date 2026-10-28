@@ -130,76 +130,27 @@ void point_enforce_continuity(Point *v, struct EdgeNode *driving_edge) {
     return;
   }
 
-  if (e1->edge.type == EDGE_TYPE_BEZIER && e2->edge.type == EDGE_TYPE_BEZIER) {
-    Point *c1 = (e1->edge.start == v) ? &e1->edge.geometry.bezier.control1
-                                      : &e1->edge.geometry.bezier.control2;
-    Point *c2 = (e2->edge.start == v) ? &e2->edge.geometry.bezier.control1
-                                      : &e2->edge.geometry.bezier.control2;
-
-    Point *c_driver = (driving_edge == e2) ? c2 : c1;
-    Point *c_target = (driving_edge == e2) ? c1 : c2;
-
-    double vx = c_driver->x - v->x;
-    double vy = c_driver->y - v->y;
-    double len = hypot(vx, vy);
-    if (len < 1e-5)
-      return;
-
-    if (v->continuity == CONTINUITY_C1) {
-      c_target->x = v->x - vx;
-      c_target->y = v->y - vy;
-    } else if (v->continuity == CONTINUITY_G1) {
-      double target_len = hypot(c_target->x - v->x, c_target->y - v->y);
-      if (target_len < 1.0)
-        target_len = len;
-      c_target->x = v->x - (vx / len) * target_len;
-      c_target->y = v->y - (vy / len) * target_len;
-    }
+  EdgeNode *t_node = (e1->edge.type == EDGE_TYPE_BEZIER)
+                         ? e1
+                         : (e2->edge.type == EDGE_TYPE_BEZIER ? e2 : NULL);
+  if (!t_node)
     return;
+  EdgeNode *d_node = (t_node == e1) ? e2 : e1;
+  if (e1->edge.type == EDGE_TYPE_BEZIER && e2->edge.type == EDGE_TYPE_BEZIER) {
+    d_node = (driving_edge == e2) ? e2 : e1;
+    t_node = (d_node == e1) ? e2 : e1;
   }
-
-  EdgeNode *e_bez = (e1->edge.type == EDGE_TYPE_BEZIER)
-                        ? e1
-                        : ((e2->edge.type == EDGE_TYPE_BEZIER) ? e2 : NULL);
-  EdgeNode *e_str = (e1->edge.type == EDGE_TYPE_STRAIGHT)
-                        ? e1
-                        : ((e2->edge.type == EDGE_TYPE_STRAIGHT) ? e2 : NULL);
-
-  if (e_bez != NULL && e_str != NULL) {
-    Point *c_bez = (e_bez->edge.start == v)
-                       ? &e_bez->edge.geometry.bezier.control1
-                       : &e_bez->edge.geometry.bezier.control2;
-    Point *p_other =
-        (e_str->edge.start == v) ? e_str->edge.end : e_str->edge.start;
-    if (p_other == NULL)
-      return;
-
-    double sx = v->x - p_other->x;
-    double sy = v->y - p_other->y;
-    double slen = hypot(sx, sy);
-    if (slen < 1e-5)
-      return;
-    double tx = sx / slen;
-    double ty = sy / slen;
-
-    if (v->continuity == CONTINUITY_C1) {
-      c_bez->x = v->x + tx * (slen / 3.0);
-      c_bez->y = v->y + ty * (slen / 3.0);
-    } else if (v->continuity == CONTINUITY_G1) {
-      double cur_len = hypot(c_bez->x - v->x, c_bez->y - v->y);
-      if (cur_len < 1.0)
-        cur_len = slen / 3.0;
-
-      if (driving_edge == e_bez) {
-        double dot = (c_bez->x - v->x) * tx + (c_bez->y - v->y) * ty;
-        if (dot < 5.0)
-          dot = 5.0;
-        c_bez->x = v->x + tx * dot;
-        c_bez->y = v->y + ty * dot;
-      } else {
-        c_bez->x = v->x + tx * cur_len;
-        c_bez->y = v->y + ty * cur_len;
-      }
-    }
-  }
+  double tx = 0, ty = 0, c1_l = 0;
+  if (!edge_get_tangent_at_point(d_node, v, FALSE, &tx, &ty, &c1_l))
+    return;
+  Point *c_target = (t_node->edge.start == v)
+                        ? &t_node->edge.geometry.bezier.control1
+                        : &t_node->edge.geometry.bezier.control2;
+  double h_l = (v->continuity == CONTINUITY_C1)
+                   ? c1_l
+                   : hypot(c_target->x - v->x, c_target->y - v->y);
+  if (h_l < 1.0)
+    h_l = c1_l;
+  c_target->x = v->x - tx * h_l;
+  c_target->y = v->y - ty * h_l;
 }

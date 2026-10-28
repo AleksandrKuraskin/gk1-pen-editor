@@ -1,4 +1,5 @@
 #include "model/edge.h"
+#include "config/config.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -111,6 +112,106 @@ int edge_set_constraint(Edge *edge, int constraint_flag) {
   return 0;
 }
 
+int edge_get_tangent_at_point(const EdgeNode *edge_node, const Point *p,
+                              gboolean incoming, double *out_tx, double *out_ty,
+                              double *out_c1_handle_len) {
+  if (!edge_node || !p || !out_tx || !out_ty)
+    return 0;
+  const Edge *e = &edge_node->edge;
+  double tx = 0, ty = 0, c1_l = 0;
+  if (e->type == EDGE_TYPE_STRAIGHT) {
+    const Point *other = (e->start == p) ? e->end : e->start;
+    tx = other->x - p->x;
+    ty = other->y - p->y;
+    c1_l = hypot(tx, ty) / 3.0;
+  } else if (e->type == EDGE_TYPE_BEZIER) {
+    const Point *c = (e->start == p) ? &e->geometry.bezier.control1
+                                     : &e->geometry.bezier.control2;
+    tx = c->x - p->x;
+    ty = c->y - p->y;
+    if (hypot(tx, ty) < CONFIG_EPSILON_GEOMETRIC) {
+      const Point *other = (e->start == p) ? e->end : e->start;
+      tx = other->x - p->x;
+      ty = other->y - p->y;
+    }
+    c1_l = hypot(tx, ty);
+  } else if (e->type == EDGE_TYPE_ARC) {
+    const ArcGeometry *arc = &e->geometry.arc;
+    if (arc->radius > CONFIG_EPSILON_GEOMETRIC) {
+      double rx = p->x - arc->cx, ry = p->y - arc->cy;
+      tx = (arc->side == ARC_SIDE_LEFT) ? -ry : ry;
+      ty = (arc->side == ARC_SIDE_LEFT) ? rx : -rx;
+      if (p == e->end) {
+        tx = -tx;
+        ty = -ty;
+      }
+    } else {
+      const Point *other = (e->start == p) ? e->end : e->start;
+      tx = other->x - p->x;
+      ty = other->y - p->y;
+    }
+    c1_l = hypot(e->end->x - e->start->x, e->end->y - e->start->y) / 3.0;
+  }
+  double len = hypot(tx, ty);
+  if (len < CONFIG_EPSILON_MACHINE)
+    return 0;
+  tx /= len;
+  ty /= len;
+  if (incoming) {
+    tx = -tx;
+    ty = -ty;
+  }
+  *out_tx = tx;
+  *out_ty = ty;
+  if (out_c1_handle_len)
+    *out_c1_handle_len = c1_l;
+  return 1;
+}
+int edge_update_arc_geometry(EdgeNode *arc_node) {
+  if (!arc_node || !arc_node->edge.start || !arc_node->edge.end)
+    return 0;
+  ArcGeometry *arc = &arc_node->edge.geometry.arc;
+  Point *s = arc_node->edge.start, *e = arc_node->edge.end;
+  double dx = e->x - s->x, dy = e->y - s->y, chord = hypot(dx, dy);
+  if (chord < CONFIG_EPSILON_GEOMETRIC)
+    return 0;
+  gboolean start_g1 = (s->continuity != CONTINUITY_G0);
+  gboolean end_g1 = (e->continuity != CONTINUITY_G0);
+  if (!start_g1 && !end_g1) {
+    arc->cx = (s->x + e->x) * 0.5;
+    arc->cy = (s->y + e->y) * 0.5;
+    arc->radius = chord * 0.5;
+    return 1;
+  }
+  Point *v_g1 = start_g1 ? s : e;
+  EdgeNode *adj =
+      (v_g1->prev_edge == arc_node) ? v_g1->next_edge : v_g1->prev_edge;
+  double tx = 0, ty = 0;
+  if (adj &&
+      edge_get_tangent_at_point(adj, v_g1, (v_g1 == s), &tx, &ty, NULL)) {
+    if (v_g1 == e) {
+      tx = -tx;
+      ty = -ty;
+    }
+    double d_x = (v_g1 == s ? e->x - s->x : s->x - e->x);
+    double d_y = (v_g1 == s ? e->y - s->y : s->y - e->y);
+    double nx = -ty, ny = tx, cross = d_x * nx + d_y * ny;
+    if (fabs(cross) > CONFIG_EPSILON_GEOMETRIC) {
+      double r_s = (chord * chord) / (2.0 * cross);
+      arc->cx = v_g1->x + r_s * nx;
+      arc->cy = v_g1->y + r_s * ny;
+      arc->radius = fabs(r_s);
+      arc->side = (v_g1 == s) ? (r_s > 0 ? ARC_SIDE_LEFT : ARC_SIDE_RIGHT)
+                              : (r_s < 0 ? ARC_SIDE_LEFT : ARC_SIDE_RIGHT);
+      return 1;
+    }
+  }
+  arc->cx = (s->x + e->x) * 0.5;
+  arc->cy = (s->y + e->y) * 0.5;
+  arc->radius = chord * 0.5;
+  return 1;
+}
+
 void edge_set_length_constraint(Edge *edge, double length) {
   if (edge == NULL)
     return;
@@ -179,7 +280,7 @@ static void edge_solve_length_constraint(Edge *edge, Point *fixed_point) {
   if (target <= 0.0)
     return;
 
-  if (distance > 1e-7) {
+  if (distance > CONFIG_EPSILON_MACHINE) {
     dx /= distance;
     dy /= distance;
   } else {
@@ -223,13 +324,13 @@ static void edge_solve_parallel_constraint(Edge *edge, Point *fixed_point) {
   double edx = edge->end->x - edge->start->x;
   double edy = edge->end->y - edge->start->y;
   double elen = hypot(edx, edy);
-  if (elen < 1e-7)
+  if (elen < CONFIG_EPSILON_MACHINE)
     return;
 
   double tdx = target->end->x - target->start->x;
   double tdy = target->end->y - target->start->y;
   double tlen = hypot(tdx, tdy);
-  if (tlen < 1e-7)
+  if (tlen < CONFIG_EPSILON_MACHINE)
     return;
 
   int sign = edge->parallel.relative_sign;
@@ -263,7 +364,7 @@ static void edge_solve_parallel_constraint(Edge *edge, Point *fixed_point) {
     double avg_x = (ux_e + ux_t) * 0.5;
     double avg_y = (uy_e + uy_t) * 0.5;
     double avg_len = hypot(avg_x, avg_y);
-    if (avg_len < 1e-7)
+    if (avg_len < CONFIG_EPSILON_MACHINE)
       return;
     avg_x /= avg_len;
     avg_y /= avg_len;

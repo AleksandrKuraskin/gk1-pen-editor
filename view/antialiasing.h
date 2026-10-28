@@ -1,0 +1,6 @@
+#ifndef POLYPEN_ANTIALIASING_H
+#define POLYPEN_ANTIALIASING_H
+
+
+
+#endif

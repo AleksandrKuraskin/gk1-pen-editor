@@ -1,6 +1,7 @@
 #include "view/renderer.h"
 
 #include "config/config.h"
+#include "model/edge.h"
 #include "model/point.h"
 #include <cairo.h>
 #include <math.h>
@@ -120,44 +121,45 @@ static void renderer_draw_bezier_incremental(PixelBuffer *buffer, cairo_t *cr,
   }
 }
 
-static void renderer_draw_arc(cairo_t *cr, Point start, Point end,
-                              ArcSide side) {
-  if (cr == NULL) {
+static void renderer_draw_arc(PixelBuffer *buffer, cairo_t *cr, EdgeNode *node,
+                              uint32_t color, gboolean use_bresenham) {
+  if (node == NULL || !edge_update_arc_geometry(node))
     return;
-  }
 
-  double dx = end.x - start.x;
-  double dy = end.y - start.y;
-  double chord_length = hypot(dx, dy);
-  if (chord_length <= 0.0) {
-    return;
-  }
+  ArcGeometry *arc = &node->edge.geometry.arc;
+  double a1 =
+      atan2(node->edge.start->y - arc->cy, node->edge.start->x - arc->cx);
+  double a2 = atan2(node->edge.end->y - arc->cy, node->edge.end->x - arc->cx);
+  gboolean ccw = (arc->side == ARC_SIDE_LEFT);
 
-  double mid_x = (start.x + end.x) * 0.5;
-  double mid_y = (start.y + end.y) * 0.5;
-  double normal_x = -dy / chord_length;
-  double normal_y = dx / chord_length;
+  if (use_bresenham && buffer) {
+    double span = ccw ? a2 - a1 : a1 - a2;
+    while (span <= 0)
+      span += 2 * M_PI;
+    int segs = (int)ceil(arc->radius * span / CONFIG_BEZIER_SEGMENT_LENGTH);
+    segs = fmax(12, fmin(300, segs));
+    double dt = (ccw ? 1.0 : -1.0) * (span / segs);
+    double px = node->edge.start->x, py = node->edge.start->y;
 
-  double radius = chord_length * 0.5;
-  double center_x = mid_x + normal_x * 0.0;
-  double center_y = mid_y + normal_y * 0.0;
-
-  double start_angle = atan2(start.y - center_y, start.x - center_x);
-  double end_angle = atan2(end.y - center_y, end.x - center_x);
-
-  if (side == ARC_SIDE_LEFT) {
-    if (end_angle <= start_angle) {
-      end_angle += 2.0 * M_PI;
+    for (int i = 1; i <= segs; i++) {
+      double t = a1 + i * dt;
+      double nx = arc->cx + arc->radius * cos(t),
+             ny = arc->cy + arc->radius * sin(t);
+      renderer_draw_line_bresenham(buffer, px, py, nx, ny, color);
+      px = nx;
+      py = ny;
     }
-  } else {
-    if (start_angle <= end_angle) {
-      start_angle += 2.0 * M_PI;
-    }
+  } else if (cr) {
+    cairo_save(cr);
+    renderer_set_source_argb(cr, color);
+    cairo_set_line_width(cr, CONFIG_EDGE_WIDTH);
+    if (ccw)
+      cairo_arc(cr, arc->cx, arc->cy, arc->radius, a1, a2);
+    else
+      cairo_arc_negative(cr, arc->cx, arc->cy, arc->radius, a1, a2);
+    cairo_stroke(cr);
+    cairo_restore(cr);
   }
-
-  cairo_set_line_width(cr, CONFIG_EDGE_WIDTH);
-  cairo_arc(cr, center_x, center_y, radius, start_angle, end_angle);
-  cairo_stroke(cr);
 }
 
 void renderer_draw_line_bresenham(PixelBuffer *buffer, double start_x,
@@ -354,9 +356,8 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
         cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
         cairo_stroke(cr);
 
-        renderer_set_source_argb(cr, CONFIG_EDGE_COLOR);
-        renderer_draw_arc(cr, *(node->edge.start), *(node->edge.end),
-                          node->edge.geometry.arc.side);
+        renderer_draw_arc(buffer, cr, node, CONFIG_EDGE_COLOR,
+                          state->use_bresenham);
         break;
 
       case EDGE_TYPE_STRAIGHT:

@@ -22,6 +22,11 @@ typedef enum { ARC_SIDE_LEFT, ARC_SIDE_RIGHT } ArcSide;
 
 typedef struct {
   ArcSide side;
+  double cx;
+  double cy;
+  double radius;
+  double start_angle;
+  double end_angle;
 } ArcGeometry;
 
 typedef struct {
@@ -72,5 +77,9 @@ void edge_remove_parallel_constraint(EdgeNode *edge_node);
 void edge_remove_all_constraints(EdgeNode *edge_node);
 
 void edge_list_solve_constraints(EdgeList *list, Point *fixed_point);
+
+int edge_get_tangent_at_point(const EdgeNode *edge_node, const Point *p, gboolean incoming, double *out_dx, double *out_dy, double *out_c1_handle_len);
+int edge_update_arc_geometry(EdgeNode *arc_node);
+
 
 #endif
