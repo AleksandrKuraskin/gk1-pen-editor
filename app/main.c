@@ -14,6 +14,33 @@ static void on_algo_toggled(GtkCheckButton *radio, gpointer user_data) {
   } else {
     state->use_bresenham = FALSE;
   }
+  if (state->drawing_area != NULL) {
+    gtk_widget_queue_draw(state->drawing_area);
+  }
+}
+
+static void on_aa_changed(GObject *object, GParamSpec *pspec,
+                          gpointer user_data) {
+  (void)pspec;
+  AppState *state = user_data;
+  GtkDropDown *dropdown = GTK_DROP_DOWN(object);
+  guint selected = gtk_drop_down_get_selected(dropdown);
+
+  switch (selected) {
+  case 1:
+    state->msaa_mode = MSAA_2X2;
+    break;
+  case 2:
+    state->msaa_mode = MSAA_4X4;
+    break;
+  case 0:
+  default:
+    state->msaa_mode = MSAA_OFF;
+    break;
+  }
+  if (state->drawing_area != NULL) {
+    gtk_widget_queue_draw(state->drawing_area);
+  }
 }
 
 static void show_documentation_dialog(GtkButton *btn, gpointer user_data) {
@@ -32,37 +59,28 @@ static void show_documentation_dialog(GtkButton *btn, gpointer user_data) {
       "1. OBSŁUGA INTERFEJSU I EDYCJA:\n"
       " - Przeciąganie wierzchołka: LPM na wierzchołek pozwala na zmianę jego "
       "położenia.\n"
-      " - Przeciąganie krawędzi: kliknięcie i przeciągnięcie krawędzi przesuwa "
-      "cały wielokąt.\n"
-      " - Przeciąganie punktu kontrolnego: zmiana kształtu segmentu Béziera.\n"
-      " - Menu wierzchołka (PPM): usuwanie wierzchołka oraz wybór klasy "
-      "ciągłości (G0, G1, C1).\n"
-      " - Menu krawędzi (PPM): zmiana typu (odcinek, Bézier, łuk), dodanie "
+      " - Przeciąganie krawędzi: kliknięcie krawędzi bazowej przesuwa cały "
+      "wielokąt.\n"
+      " - Menu punktu (PPM): usuwanie oraz wybór ciągłości (G0, G1, C1).\n"
+      " - Menu krawędzi (PPM na krawędź bazową): zmiana typu, dodanie "
       "wierzchołka oraz nakładanie i usuwanie ograniczeń.\n\n"
-      "2. OGRANICZENIA GEOMETRYCZNE:\n"
+      "2. MULTISAMPLING (MSAA):\n"
+      " - Dropdown w nagłówku pozwala na wybór trybu: OFF, 2x2, 4x4.\n"
+      " - Scena jest renderowana do super-bufora z uśrednianiem filtrem "
+      "pudełkowym.\n\n"
+      "3. OGRANICZENIA GEOMETRYCZNE:\n"
       " - Zadana długość krawędzi: utrzymywanie stałej odległości między "
       "końcami segmentu.\n"
       " - Równoległość dwóch krawędzi: wymuszenie współliniowości wektorów "
       "kierunkowych wybranej pary krawędzi.\n"
       " - Solver ograniczeń: iteracyjny algorytm relaksacyjny korygujący "
-      "położenie wierzchołków z uwzględnieniem punktu aktualnie "
-      "przeciąganego.\n"
-      " - Modyfikacja topologii: wstawienie lub usunięcie wierzchołka usuwa "
-      "powiązane relacje geometryczne.\n\n"
-      "3. KLASY CIĄGŁOŚCI W WĘZŁACH:\n"
-      " - G0: ciągłość położenia (wspólny wierzchołek, niezależne kierunki "
-      "stycznych).\n"
-      " - G1: ciągłość kierunku (jednostkowego wektora stycznego). Punkty "
-      "kontrolne leżą na wspólnej prostej przechodzącej przez wierzchołek.\n"
-      " - C1: ciągłość wektora stycznego (równość wektorów pochodnych, "
-      "symetria uchwytów względem węzła).\n"
+      "położenie wierzchołków.\n\n"
+      "4. KLASY CIĄGŁOŚCI W WĘZŁACH:\n"
+      " - G0: ciągłość położenia.\n"
+      " - G1: ciągłość kierunku jednostkowego wektora stycznego.\n"
+      " - C1: ciągłość wektora stycznego.\n"
       " - Łuki okręgów: co najwyżej jeden koniec danego łuku może posiadać "
-      "ciągłość G1.\n\n"
-      "4. ALGORYTMY RENDEROWANIA:\n"
-      " - Przełącznik rasteryzacji: wybór pomiędzy własną implementacją "
-      "algorytmu Bresenhama a algorytmem bibliotecznym Cairo.\n"
-      " - Segmenty Béziera: wyznaczanie punktów metodą przyrostową w bazie "
-      "potęgowej z wykorzystaniem różnic skończonych trzeciego rzędu.\n");
+      "ciągłość G1.\n");
   gtk_label_set_wrap(GTK_LABEL(label), TRUE);
   gtk_widget_set_margin_start(label, 20);
   gtk_widget_set_margin_end(label, 20);
@@ -100,13 +118,25 @@ static void activate(GtkApplication *app, gpointer user_data) {
   gtk_box_append(GTK_BOX(algo_box), radio_cairo);
   gtk_header_bar_pack_start(GTK_HEADER_BAR(header), algo_box);
 
+  GtkWidget *aa_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_widget_set_margin_start(aa_box, 14);
+  GtkWidget *aa_label = gtk_label_new("Antialiasing:");
+  const char *const aa_options[] = {"OFF", "2x2", "4x4", NULL};
+  GtkWidget *aa_dropdown = gtk_drop_down_new_from_strings(aa_options);
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(aa_dropdown), 0);
+  g_signal_connect(aa_dropdown, "notify::selected", G_CALLBACK(on_aa_changed),
+                   state);
+  gtk_box_append(GTK_BOX(aa_box), aa_label);
+  gtk_box_append(GTK_BOX(aa_box), aa_dropdown);
+  gtk_header_bar_pack_start(GTK_HEADER_BAR(header), aa_box);
+
   GtkWidget *help_btn = gtk_button_new_with_label("Documentation");
   g_signal_connect(help_btn, "clicked", G_CALLBACK(show_documentation_dialog),
                    window);
   gtk_header_bar_pack_end(GTK_HEADER_BAR(header), help_btn);
 
-  // Obszar rysowania
   GtkWidget *drawing_area = gtk_drawing_area_new();
+  state->drawing_area = drawing_area;
   gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(drawing_area),
                                      CONFIG_WINDOW_WIDTH);
   gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(drawing_area),
@@ -125,12 +155,10 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  // application declaration
   GtkApplication *app =
       gtk_application_new(CONFIG_APP_ID, G_APPLICATION_DEFAULT_FLAGS);
   g_signal_connect(app, "activate", G_CALLBACK(activate), state);
 
-  // application lifecycle
   int status = g_application_run(G_APPLICATION(app), argc, argv);
   g_object_unref(app);
   app_state_destroy(state);

@@ -9,6 +9,7 @@ typedef struct {
   GtkWidget *drawing_area;
   GtkWidget *popover;
   GtkWidget *length_spin;
+  GtkWidget *arc_box;
   AppState *state;
   EdgeNode *edge;
   double insert_x;
@@ -141,6 +142,62 @@ static void edge_menu_set_arc_defaults(EdgeNode *edge) {
   edge_set_arc(&edge->edge, side);
 }
 
+static void edge_menu_arc_set_g1_start_cb(GtkButton *b, gpointer u) {
+  (void)b;
+  (void)u;
+  if (edge_menu_state.edge && edge_menu_state.edge->edge.start &&
+      edge_menu_state.edge->edge.end) {
+    edge_menu_state.edge->edge.start->continuity = CONTINUITY_G1;
+    edge_menu_state.edge->edge.start->continuity_set_by_user = TRUE;
+    edge_menu_state.edge->edge.end->continuity = CONTINUITY_G0;
+    edge_menu_state.edge->edge.end->continuity_set_by_user = TRUE;
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_arc_set_g1_end_cb(GtkButton *b, gpointer u) {
+  (void)b;
+  (void)u;
+  if (edge_menu_state.edge && edge_menu_state.edge->edge.start &&
+      edge_menu_state.edge->edge.end) {
+    edge_menu_state.edge->edge.end->continuity = CONTINUITY_G1;
+    edge_menu_state.edge->edge.end->continuity_set_by_user = TRUE;
+    edge_menu_state.edge->edge.start->continuity = CONTINUITY_G0;
+    edge_menu_state.edge->edge.start->continuity_set_by_user = TRUE;
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_arc_set_g0_both_cb(GtkButton *b, gpointer u) {
+  (void)b;
+  (void)u;
+  if (edge_menu_state.edge && edge_menu_state.edge->edge.start &&
+      edge_menu_state.edge->edge.end) {
+    edge_menu_state.edge->edge.start->continuity = CONTINUITY_G0;
+    edge_menu_state.edge->edge.start->continuity_set_by_user = TRUE;
+    edge_menu_state.edge->edge.end->continuity = CONTINUITY_G0;
+    edge_menu_state.edge->edge.end->continuity_set_by_user = TRUE;
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
+static void edge_menu_arc_flip_side_cb(GtkButton *b, gpointer u) {
+  (void)b;
+  (void)u;
+  if (edge_menu_state.edge &&
+      edge_menu_state.edge->edge.type == EDGE_TYPE_ARC) {
+    edge_menu_state.edge->edge.geometry.arc.side =
+        (edge_menu_state.edge->edge.geometry.arc.side == ARC_SIDE_LEFT)
+            ? ARC_SIDE_RIGHT
+            : ARC_SIDE_LEFT;
+    gtk_widget_queue_draw(edge_menu_state.drawing_area);
+  }
+  edge_menu_close();
+}
+
 static void edge_menu_set_type(GtkButton *button, gpointer user_data) {
   (void)button;
   if (edge_menu_state.edge != NULL) {
@@ -157,6 +214,17 @@ static void edge_menu_set_type(GtkButton *button, gpointer user_data) {
       point_enforce_continuity(edge_menu_state.edge->edge.end, NULL);
     } else if (type == EDGE_TYPE_ARC) {
       edge_menu_set_arc_defaults(edge_menu_state.edge);
+      Point *s = edge_menu_state.edge->edge.start;
+      Point *e = edge_menu_state.edge->edge.end;
+      if (s != NULL && e != NULL) {
+        if (s->continuity == CONTINUITY_C1)
+          s->continuity = CONTINUITY_G1;
+        if (e->continuity == CONTINUITY_C1)
+          e->continuity = CONTINUITY_G1;
+        if (s->continuity == CONTINUITY_G1 && e->continuity == CONTINUITY_G1) {
+          e->continuity = CONTINUITY_G0;
+        }
+      }
     } else {
       edge_menu_state.edge->edge.type = type;
     }
@@ -262,6 +330,11 @@ static void edge_menu_secondary_click_cb(GtkGestureClick *gesture, int n_press,
                               current_len);
   }
 
+  if (edge_menu_state.arc_box != NULL) {
+    gtk_widget_set_visible(edge_menu_state.arc_box,
+                           (edge->edge.type == EDGE_TYPE_ARC));
+  }
+
   GdkRectangle pointing_to = {(int)lround(x), (int)lround(y), 1, 1};
   gtk_popover_set_pointing_to(GTK_POPOVER(edge_menu_state.popover),
                               &pointing_to);
@@ -294,6 +367,35 @@ static void edge_menu_create(GtkWidget *drawing_area) {
     g_signal_connect(button, "clicked", G_CALLBACK(edge_menu_set_type),
                      GINT_TO_POINTER(i));
   }
+
+  edge_menu_state.arc_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  gtk_box_append(GTK_BOX(edge_menu_state.arc_box),
+                 gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+  GtkWidget *arc_label = gtk_label_new("Arc G1 continuity:");
+  gtk_widget_set_halign(arc_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(edge_menu_state.arc_box), arc_label);
+
+  GtkWidget *arc_g1_start = gtk_button_new_with_label("G1 at start point");
+  g_signal_connect(arc_g1_start, "clicked",
+                   G_CALLBACK(edge_menu_arc_set_g1_start_cb), NULL);
+  gtk_box_append(GTK_BOX(edge_menu_state.arc_box), arc_g1_start);
+
+  GtkWidget *arc_g1_end = gtk_button_new_with_label("G1 at end point");
+  g_signal_connect(arc_g1_end, "clicked",
+                   G_CALLBACK(edge_menu_arc_set_g1_end_cb), NULL);
+  gtk_box_append(GTK_BOX(edge_menu_state.arc_box), arc_g1_end);
+
+  GtkWidget *arc_g0_both =
+      gtk_button_new_with_label("G0 at both ends (semicircle)");
+  g_signal_connect(arc_g0_both, "clicked",
+                   G_CALLBACK(edge_menu_arc_set_g0_both_cb), NULL);
+  gtk_box_append(GTK_BOX(edge_menu_state.arc_box), arc_g0_both);
+
+  GtkWidget *arc_flip = gtk_button_new_with_label("Flip arc side");
+  g_signal_connect(arc_flip, "clicked", G_CALLBACK(edge_menu_arc_flip_side_cb),
+                   NULL);
+  gtk_box_append(GTK_BOX(edge_menu_state.arc_box), arc_flip);
+  gtk_box_append(GTK_BOX(menu_box), edge_menu_state.arc_box);
 
   gtk_box_append(GTK_BOX(menu_box),
                  gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));

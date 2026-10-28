@@ -1,323 +1,38 @@
 #include "view/renderer.h"
-
 #include "config/config.h"
-#include "model/edge.h"
-#include "model/point.h"
+#include "view/antialiasing.h"
+#include "view/overlay.h"
+#include "view/rasterizer.h"
 #include <cairo.h>
-#include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
 
-static void renderer_set_source_argb(cairo_t *cr, uint32_t color) {
-  double alpha = ((color >> 24) & 0xFF) / 255.0;
-  double red = ((color >> 16) & 0xFF) / 255.0;
-  double green = ((color >> 8) & 0xFF) / 255.0;
-  double blue = (color & 0xFF) / 255.0;
+void renderer_draw_scene_scaled(cairo_t *cr, PixelBuffer *raw_super_buffer,
+                                int scale, int width, int height,
+                                AppState *state) {
+  cairo_save(cr);
+  cairo_scale(cr, scale, scale);
+  overlay_draw_background(cr, width, height);
 
-  cairo_set_source_rgba(cr, red, green, blue, alpha);
-}
-
-static void renderer_draw_background(cairo_t *cr, int width, int height) {
-  renderer_set_source_argb(cr, CONFIG_CANVAS_BACKGROUND);
-  cairo_paint(cr);
-
-  renderer_set_source_argb(cr, CONFIG_GRID_COLOR);
-  for (int y = CONFIG_GRID_SPACING / 2; y < height; y += CONFIG_GRID_SPACING) {
-    for (int x = CONFIG_GRID_SPACING / 2; x < width; x += CONFIG_GRID_SPACING) {
-      cairo_move_to(cr, x, y);
-      cairo_arc(cr, x, y, CONFIG_GRID_DOT_RADIUS, 0, 2 * G_PI);
-    }
-  }
-  cairo_fill(cr);
-}
-
-static int renderer_bezier_segment_count(Point p0, Point p1, Point p2,
-                                         Point p3) {
-  double polygon_length = hypot(p1.x - p0.x, p1.y - p0.y) +
-                          hypot(p2.x - p1.x, p2.y - p1.y) +
-                          hypot(p3.x - p2.x, p3.y - p2.y);
-
-  if (polygon_length <= 0.0) {
-    return CONFIG_BEZIER_MIN_SEGMENTS;
-  }
-
-  int segments = (int)ceil(polygon_length / CONFIG_BEZIER_SEGMENT_LENGTH);
-  if (segments < CONFIG_BEZIER_MIN_SEGMENTS) {
-    segments = CONFIG_BEZIER_MIN_SEGMENTS;
-  }
-  if (segments > CONFIG_BEZIER_MAX_SEGMENTS) {
-    segments = CONFIG_BEZIER_MAX_SEGMENTS;
-  }
-
-  return segments;
-}
-
-static void renderer_draw_bezier_incremental(PixelBuffer *buffer, cairo_t *cr,
-                                             Point p0, Point p1, Point p2,
-                                             Point p3, uint32_t color,
-                                             gboolean use_bresenham) {
-  int segments = renderer_bezier_segment_count(p0, p1, p2, p3);
-  if (segments <= 0)
-    return;
-
-  double h = 1.0 / (double)segments;
-  double h2 = h * h;
-  double h3 = h2 * h;
-
-  double ax = -p0.x + 3.0 * p1.x - 3.0 * p2.x + p3.x;
-  double ay = -p0.y + 3.0 * p1.y - 3.0 * p2.y + p3.y;
-
-  double bx = 3.0 * p0.x - 6.0 * p1.x + 3.0 * p2.x;
-  double by = 3.0 * p0.y - 6.0 * p1.y + 3.0 * p2.y;
-
-  double cx = -3.0 * p0.x + 3.0 * p1.x;
-  double cy = -3.0 * p0.y + 3.0 * p1.y;
-
-  double dx = p0.x;
-  double dy = p0.y;
-
-  double x = dx;
-  double y = dy;
-
-  double delta_x = ax * h3 + bx * h2 + cx * h;
-  double delta_y = ay * h3 + by * h2 + cy * h;
-
-  double delta2_x = 6.0 * ax * h3 + 2.0 * bx * h2;
-  double delta2_y = 6.0 * ay * h3 + 2.0 * by * h2;
-
-  double delta3_x = 6.0 * ax * h3;
-  double delta3_y = 6.0 * ay * h3;
-
-  double prev_x = x;
-  double prev_y = y;
-
-  if (!use_bresenham) {
-    cairo_save(cr);
-    renderer_set_source_argb(cr, color);
-    cairo_set_line_width(cr, CONFIG_EDGE_WIDTH);
-    cairo_move_to(cr, prev_x, prev_y);
-  }
-
-  for (int i = 0; i < segments; i++) {
-    x += delta_x;
-    y += delta_y;
-    delta_x += delta2_x;
-    delta_y += delta2_y;
-    delta2_x += delta3_x;
-    delta2_y += delta3_y;
-
-    if (use_bresenham && buffer != NULL) {
-      renderer_draw_line_bresenham(buffer, prev_x, prev_y, x, y, color);
-    } else if (!use_bresenham) {
-      cairo_line_to(cr, x, y);
-    }
-    prev_x = x;
-    prev_y = y;
-  }
-
-  if (!use_bresenham) {
-    cairo_stroke(cr);
-    cairo_restore(cr);
-  }
-}
-
-static void renderer_draw_arc(PixelBuffer *buffer, cairo_t *cr, EdgeNode *node,
-                              uint32_t color, gboolean use_bresenham) {
-  if (node == NULL || !edge_update_arc_geometry(node))
-    return;
-
-  ArcGeometry *arc = &node->edge.geometry.arc;
-  double a1 =
-      atan2(node->edge.start->y - arc->cy, node->edge.start->x - arc->cx);
-  double a2 = atan2(node->edge.end->y - arc->cy, node->edge.end->x - arc->cx);
-  gboolean ccw = (arc->side == ARC_SIDE_LEFT);
-
-  if (use_bresenham && buffer) {
-    double span = ccw ? a2 - a1 : a1 - a2;
-    while (span <= 0)
-      span += 2 * M_PI;
-    int segs = (int)ceil(arc->radius * span / CONFIG_BEZIER_SEGMENT_LENGTH);
-    segs = fmax(12, fmin(300, segs));
-    double dt = (ccw ? 1.0 : -1.0) * (span / segs);
-    double px = node->edge.start->x, py = node->edge.start->y;
-
-    for (int i = 1; i <= segs; i++) {
-      double t = a1 + i * dt;
-      double nx = arc->cx + arc->radius * cos(t),
-             ny = arc->cy + arc->radius * sin(t);
-      renderer_draw_line_bresenham(buffer, px, py, nx, ny, color);
-      px = nx;
-      py = ny;
-    }
-  } else if (cr) {
-    cairo_save(cr);
-    renderer_set_source_argb(cr, color);
-    cairo_set_line_width(cr, CONFIG_EDGE_WIDTH);
-    if (ccw)
-      cairo_arc(cr, arc->cx, arc->cy, arc->radius, a1, a2);
-    else
-      cairo_arc_negative(cr, arc->cx, arc->cy, arc->radius, a1, a2);
-    cairo_stroke(cr);
-    cairo_restore(cr);
-  }
-}
-
-void renderer_draw_line_bresenham(PixelBuffer *buffer, double start_x,
-                                  double start_y, double end_x, double end_y,
-                                  uint32_t color) {
-  if (buffer == NULL || buffer->pixels == NULL || buffer->width <= 0 ||
-      buffer->height <= 0) {
-    return;
-  }
-
-  if (!isfinite(start_x) || !isfinite(start_y) || !isfinite(end_x) ||
-      !isfinite(end_y)) {
-    return;
-  }
-
-  int x0 = (int)lround(start_x);
-  int y0 = (int)lround(start_y);
-  int x1 = (int)lround(end_x);
-  int y1 = (int)lround(end_y);
-  int dx = abs(x1 - x0);
-  int sx = x0 < x1 ? 1 : -1;
-  int dy = -abs(y1 - y0);
-  int sy = y0 < y1 ? 1 : -1;
-  int error = dx + dy;
-
-  while (1) {
-    if (x0 >= 0 && x0 < buffer->width && y0 >= 0 && y0 < buffer->height) {
-      buffer->pixels[(size_t)y0 * (size_t)buffer->width + (size_t)x0] = color;
-    }
-
-    if (x0 == x1 && y0 == y1) {
-      break;
-    }
-
-    int doubled_error = 2 * error;
-    if (doubled_error >= dy) {
-      error += dy;
-      x0 += sx;
-    }
-    if (doubled_error <= dx) {
-      error += dx;
-      y0 += sy;
-    }
-  }
-}
-
-static void renderer_draw_edge_constraints_labels(cairo_t *cr,
-                                                  const Edge *edge) {
-  if (cr == NULL || edge == NULL || edge->start == NULL || edge->end == NULL)
-    return;
-
-  double mid_x = (edge->start->x + edge->end->x) * 0.5;
-  double mid_y = (edge->start->y + edge->end->y) * 0.5;
-
-  char label[64] = "";
-  if ((edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) &&
-      (edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL)) {
-    snprintf(label, sizeof(label), "%.1f | || %d", edge->length.length,
-             edge->parallel.group_id);
-  } else if (edge->constraint_mask & EDGE_CONSTRAINT_LENGTH) {
-    snprintf(label, sizeof(label), "%.1f", edge->length.length);
-  } else if (edge->constraint_mask & EDGE_CONSTRAINT_PARALLEL) {
-    snprintf(label, sizeof(label), "|| %d", edge->parallel.group_id);
-  } else {
-    return;
-  }
-
-  cairo_set_font_size(cr, CONFIG_LENGTH_LABEL_FONT_SIZE);
-  cairo_text_extents_t extents;
-  cairo_text_extents(cr, label, &extents);
-
-  renderer_set_source_argb(cr, CONFIG_LABEL_BACKGROUND_COLOR);
-  cairo_rectangle(cr, mid_x - extents.width * 0.5 - CONFIG_LENGTH_LABEL_PADDING,
-                  mid_y - extents.height * 0.5 - CONFIG_LENGTH_LABEL_PADDING,
-                  extents.width + CONFIG_LENGTH_LABEL_PADDING * 2.0,
-                  extents.height + CONFIG_LENGTH_LABEL_PADDING * 2.0);
-  cairo_fill(cr);
-
-  renderer_set_source_argb(cr, CONFIG_LABEL_TEXT_COLOR);
-  cairo_move_to(cr, mid_x - extents.width * 0.5 - extents.x_bearing,
-                mid_y - extents.height * 0.5 - extents.y_bearing);
-  cairo_show_text(cr, label);
-  cairo_new_path(cr);
-}
-
-static gboolean point_touches_curve(const Point *p) {
-  if (p == NULL)
-    return FALSE;
-  if (p->prev_edge != NULL && (p->prev_edge->edge.type == EDGE_TYPE_BEZIER ||
-                               p->prev_edge->edge.type == EDGE_TYPE_ARC)) {
-    return TRUE;
-  }
-  if (p->next_edge != NULL && (p->next_edge->edge.type == EDGE_TYPE_BEZIER ||
-                               p->next_edge->edge.type == EDGE_TYPE_ARC)) {
-    return TRUE;
-  }
-  return FALSE;
-}
-
-static void renderer_draw_point_continuity_label(cairo_t *cr,
-                                                 const Point *point) {
-  if (cr == NULL || point == NULL || !point_touches_curve(point) ||
-      point->continuity == CONTINUITY_G0) {
-    return;
-  }
-
-  const char *label = "";
-  if (point->continuity == CONTINUITY_G1) {
-    label = "G1";
-  } else if (point->continuity == CONTINUITY_C1) {
-    label = "C1";
-  }
-
-  cairo_set_font_size(cr, 11.0);
-  cairo_text_extents_t extents;
-  cairo_text_extents(cr, label, &extents);
-
-  double x = point->x + 8.0;
-  double y = point->y - 8.0;
-
-  renderer_set_source_argb(cr, 0xFF38BDF8);
-  cairo_move_to(cr, x - extents.x_bearing,
-                y - extents.y_bearing - extents.height);
-  cairo_show_text(cr, label);
-  cairo_new_path(cr);
-}
-
-void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
-                                int height, gpointer user_data) {
-  (void)area;
-
-  AppState *state = user_data;
-  if (state == NULL) {
-    return;
-  }
-
-  renderer_draw_background(cr, width, height);
-
-  PixelBuffer *buffer = NULL;
+  PixelBuffer *bres_buf = NULL;
   if (state->use_bresenham) {
-    buffer = pixel_buffer_create(width, height);
+    bres_buf =
+        (scale > 1) ? raw_super_buffer : pixel_buffer_create(width, height);
   }
 
   if (state->edges != NULL) {
     for (EdgeNode *node = state->edges->head; node != NULL; node = node->next) {
-      if (node->edge.start == NULL || node->edge.end == NULL) {
+      if (!node->edge.start || !node->edge.end)
         continue;
-      }
 
       switch (node->edge.type) {
       case EDGE_TYPE_BEZIER:
-        renderer_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
+        overlay_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
         cairo_set_line_width(cr, CONFIG_EDGE_ANCHOR_LINE_WIDTH);
         cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
         cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
         cairo_stroke(cr);
 
-        renderer_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
+        overlay_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
         cairo_set_dash(cr,
                        (double[]){CONFIG_EDGE_GUIDE_DASH_LENGTH,
                                   CONFIG_EDGE_GUIDE_DASH_GAP},
@@ -332,13 +47,13 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
         cairo_stroke(cr);
         cairo_set_dash(cr, NULL, 0, 0.0);
 
-        renderer_draw_bezier_incremental(buffer, cr, *(node->edge.start),
-                                         node->edge.geometry.bezier.control1,
-                                         node->edge.geometry.bezier.control2,
-                                         *(node->edge.end), CONFIG_EDGE_COLOR,
-                                         state->use_bresenham);
+        rasterizer_draw_bezier_forward_diff(
+            bres_buf, cr, *(node->edge.start),
+            node->edge.geometry.bezier.control1,
+            node->edge.geometry.bezier.control2, *(node->edge.end),
+            CONFIG_EDGE_COLOR, state->use_bresenham, scale);
 
-        renderer_set_source_argb(cr, CONFIG_CONTROL_POINT_COLOR);
+        overlay_set_source_argb(cr, CONFIG_CONTROL_POINT_COLOR);
         cairo_arc(cr, node->edge.geometry.bezier.control1.x,
                   node->edge.geometry.bezier.control1.y,
                   CONFIG_CONTROL_POINT_RADIUS, 0, 2 * G_PI);
@@ -350,25 +65,26 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
         break;
 
       case EDGE_TYPE_ARC:
-        renderer_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
+        overlay_set_source_argb(cr, CONFIG_EDGE_ANCHOR_COLOR);
         cairo_set_line_width(cr, CONFIG_EDGE_ANCHOR_LINE_WIDTH);
         cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
         cairo_line_to(cr, node->edge.end->x, node->edge.end->y);
         cairo_stroke(cr);
 
-        renderer_draw_arc(buffer, cr, node, CONFIG_EDGE_COLOR,
-                          state->use_bresenham);
+        rasterizer_draw_arc(bres_buf, cr, node, CONFIG_EDGE_COLOR,
+                            state->use_bresenham, scale);
         break;
 
       case EDGE_TYPE_STRAIGHT:
       default:
-        if (state->use_bresenham && buffer != NULL) {
-          renderer_draw_line_bresenham(buffer, node->edge.start->x,
-                                       node->edge.start->y, node->edge.end->x,
-                                       node->edge.end->y, CONFIG_EDGE_COLOR);
+        if (state->use_bresenham && bres_buf != NULL) {
+          rasterizer_draw_line_bresenham(
+              bres_buf, node->edge.start->x * scale,
+              node->edge.start->y * scale, node->edge.end->x * scale,
+              node->edge.end->y * scale, CONFIG_EDGE_COLOR);
         } else {
           cairo_save(cr);
-          renderer_set_source_argb(cr, CONFIG_EDGE_COLOR);
+          overlay_set_source_argb(cr, CONFIG_EDGE_COLOR);
           cairo_set_line_width(cr, CONFIG_EDGE_WIDTH);
           cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
           cairo_move_to(cr, node->edge.start->x, node->edge.start->y);
@@ -381,82 +97,59 @@ void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
     }
   }
 
-  if (state->use_bresenham && buffer != NULL) {
-    cairo_surface_t *surface = cairo_image_surface_create_for_data(
-        (unsigned char *)buffer->pixels, CAIRO_FORMAT_ARGB32, width, height,
+  if (state->use_bresenham && scale == 1 && bres_buf != NULL) {
+    cairo_surface_t *surf = cairo_image_surface_create_for_data(
+        (unsigned char *)bres_buf->pixels, CAIRO_FORMAT_ARGB32, width, height,
         width * (int)sizeof(uint32_t));
-    if (cairo_surface_status(surface) == CAIRO_STATUS_SUCCESS) {
+    if (cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS) {
       cairo_save(cr);
-      cairo_set_source_surface(cr, surface, 0, 0);
+      cairo_set_source_surface(cr, surf, 0, 0);
       cairo_paint(cr);
       cairo_restore(cr);
     }
-    cairo_surface_destroy(surface);
-    pixel_buffer_destroy(buffer);
+    cairo_surface_destroy(surf);
+    pixel_buffer_destroy(bres_buf);
   }
 
-  if (state->pairing_edge != NULL && state->pairing_edge->edge.start != NULL &&
-      state->pairing_edge->edge.end != NULL) {
-    cairo_save(cr);
-    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-    renderer_set_source_argb(cr, 0xFFF59E0B);
-    cairo_set_line_width(cr, CONFIG_EDGE_WIDTH + 4.0);
-
-    Edge *p_edge = &state->pairing_edge->edge;
-    cairo_move_to(cr, p_edge->start->x, p_edge->start->y);
-    cairo_line_to(cr, p_edge->end->x, p_edge->end->y);
-    cairo_stroke(cr);
-    cairo_restore(cr);
-  }
-
-  if (state->hovered_edge != NULL && state->hovered_edge->edge.start != NULL &&
-      state->hovered_edge->edge.end != NULL) {
-    cairo_save(cr);
-    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-    renderer_set_source_argb(cr, CONFIG_HOVER_COLOR);
-    cairo_set_line_width(cr, CONFIG_EDGE_WIDTH + CONFIG_HOVER_OUTLINE_WIDTH);
-
-    Edge *edge = &state->hovered_edge->edge;
-    cairo_move_to(cr, edge->start->x, edge->start->y);
-    cairo_line_to(cr, edge->end->x, edge->end->y);
-    cairo_stroke(cr);
-    cairo_restore(cr);
-  }
-
-  if (state->points != NULL) {
-    for (PointNode *node = state->points->head; node != NULL;
-         node = node->next) {
-      if (node->point == NULL) {
-        continue;
-      }
-
-      cairo_arc(cr, node->point->x, node->point->y, CONFIG_POINT_RADIUS, 0,
-                2 * G_PI);
-      if (node->point == state->hovered_point) {
-        renderer_set_source_argb(cr, CONFIG_POINT_COLOR);
-        cairo_fill_preserve(cr);
-        renderer_set_source_argb(cr, CONFIG_HOVER_COLOR);
-        cairo_set_line_width(cr, CONFIG_HOVER_OUTLINE_WIDTH);
-        cairo_stroke(cr);
-      } else {
-        renderer_set_source_argb(cr, CONFIG_POINT_COLOR);
-        cairo_fill(cr);
-      }
-    }
-  }
+  overlay_draw_pairing_edge(cr, state->pairing_edge);
+  overlay_draw_edge_hover(cr, state->hovered_edge);
+  overlay_draw_points(cr, state->points, state->hovered_point);
 
   if (state->edges != NULL) {
-    for (EdgeNode *node = state->edges->head; node != NULL; node = node->next) {
-      renderer_draw_edge_constraints_labels(cr, &node->edge);
+    for (EdgeNode *en = state->edges->head; en != NULL; en = en->next) {
+      overlay_draw_edge_constraints_labels(cr, &en->edge);
     }
-
     if (state->points != NULL) {
-      for (PointNode *node = state->points->head; node != NULL;
-           node = node->next) {
-        renderer_draw_point_continuity_label(cr, node->point);
+      for (PointNode *pn = state->points->head; pn != NULL; pn = pn->next) {
+        overlay_draw_point_continuity_label(cr, pn->point);
       }
     }
   }
+  cairo_restore(cr);
+}
+
+static void direct_render_state_run(RenderState *self, cairo_t *cr, int width,
+                                    int height, AppState *state) {
+  (void)self;
+  renderer_draw_scene_scaled(cr, NULL, 1, width, height, state);
+}
+
+static RenderState direct_state_instance = {.render = direct_render_state_run};
+
+static RenderState *renderer_get_state(MsaaMode mode) {
+  if (mode == MSAA_OFF)
+    return &direct_state_instance;
+  return antialiasing_get_render_state();
+}
+
+void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
+                                int height, gpointer user_data) {
+  (void)area;
+  AppState *state = user_data;
+  if (!state)
+    return;
+
+  cairo_set_antialias(cr, CAIRO_ANTIALIAS_NONE);
+  RenderState *render_state = renderer_get_state(state->msaa_mode);
+  render_state->render(render_state, cr, width, height, state);
 }

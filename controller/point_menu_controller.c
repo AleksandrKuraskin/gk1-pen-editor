@@ -7,6 +7,7 @@
 typedef struct {
   GtkWidget *drawing_area;
   GtkWidget *popover;
+  GtkWidget *c1_button;
   AppState *state;
   Point *point;
 } PointMenuState;
@@ -59,6 +60,16 @@ static void point_menu_show(AppState *state, Point *point, double x, double y) {
 
   point_menu_state.state = state;
   point_menu_state.point = point;
+
+  gboolean touches_arc = (point->prev_edge != NULL &&
+                          point->prev_edge->edge.type == EDGE_TYPE_ARC) ||
+                         (point->next_edge != NULL &&
+                          point->next_edge->edge.type == EDGE_TYPE_ARC);
+
+  if (point_menu_state.c1_button != NULL) {
+    gtk_widget_set_sensitive(point_menu_state.c1_button, !touches_arc);
+  }
+
   GdkRectangle pointing_to = {(int)lround(x), (int)lround(y), 1, 1};
   gtk_popover_set_pointing_to(GTK_POPOVER(point_menu_state.popover),
                               &pointing_to);
@@ -95,14 +106,15 @@ static void point_menu_set_continuity_cb(GtkButton *button,
     p->continuity = c;
     p->continuity_set_by_user = TRUE;
 
-    if (c == CONTINUITY_G1) {
+    if (c == CONTINUITY_G1 || c == CONTINUITY_C1) {
       EdgeNode *edges[2] = {p->prev_edge, p->next_edge};
       for (int i = 0; i < 2; i++) {
         if (edges[i] != NULL && edges[i]->edge.type == EDGE_TYPE_ARC) {
           Point *other = (edges[i]->edge.start == p) ? edges[i]->edge.end
                                                      : edges[i]->edge.start;
-          if (other != NULL && other->continuity == CONTINUITY_G1) {
+          if (other != NULL) {
             other->continuity = CONTINUITY_G0;
+            other->continuity_set_by_user = TRUE;
           }
         }
       }
@@ -174,6 +186,9 @@ static void point_menu_create(GtkWidget *drawing_area) {
     gtk_box_append(GTK_BOX(menu_box), btn);
     g_signal_connect(btn, "clicked", G_CALLBACK(point_menu_set_continuity_cb),
                      GINT_TO_POINTER(i));
+    if (i == 2) {
+      point_menu_state.c1_button = btn;
+    }
   }
 
   gtk_popover_set_child(GTK_POPOVER(point_menu_state.popover), menu_box);

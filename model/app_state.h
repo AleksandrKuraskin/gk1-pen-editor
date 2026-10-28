@@ -3,6 +3,8 @@
 
 #include "model/edge.h"
 #include "model/point.h"
+#include "view/antialiasing.h"
+#include <gtk/gtk.h>
 #include <glib.h>
 
 typedef struct {
@@ -15,6 +17,8 @@ typedef struct {
   EdgeNode *pairing_edge;
   gboolean use_bresenham;
   int next_parallel_group_id;
+  MsaaMode msaa_mode;
+  GtkWidget *drawing_area;
 } AppState;
 
 AppState *app_state_create(void);

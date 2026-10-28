@@ -78,6 +78,13 @@ static int app_state_init_scene(AppState *state) {
   edge_set_parallel_constraint(edges1[3], edges2[0],
                                state->next_parallel_group_id++);
 
+  edges2[2]->edge.type = EDGE_TYPE_ARC;
+  edges2[2]->edge.geometry.arc.side = ARC_SIDE_LEFT;
+  pts2[2]->continuity = CONTINUITY_G1;
+  pts2[2]->continuity_set_by_user = TRUE;
+  pts2[3]->continuity = CONTINUITY_G0;
+  pts2[3]->continuity_set_by_user = TRUE;
+
   app_state_link_point_edges(state);
   return 1;
 }
@@ -96,6 +103,8 @@ AppState *app_state_create(void) {
   state->pairing_edge = NULL;
   state->use_bresenham = TRUE;
   state->next_parallel_group_id = 1;
+  state->msaa_mode = MSAA_OFF;
+  state->drawing_area = NULL;
 
   if (state->points == NULL || state->edges == NULL) {
     point_list_destroy(state->points);

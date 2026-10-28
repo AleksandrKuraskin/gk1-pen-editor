@@ -7,8 +7,13 @@
 #include "model/app_state.h"
 #include "view/pixel_buffer.h"
 
-void renderer_draw_line_bresenham(PixelBuffer *buffer, double x0, double y0,
-                                  double x1, double y1, uint32_t color);
+typedef struct RenderState {
+  void (*render)(struct RenderState *self, cairo_t *cr, int width, int height, AppState *state);
+} RenderState;
+
+void renderer_draw_scene_scaled(cairo_t *cr, PixelBuffer *raw_super_buffer, int scale,
+                                int width, int height, AppState *state);
+
 void renderer_draw_pixel_buffer(GtkDrawingArea *area, cairo_t *cr, int width,
                                 int height, gpointer user_data);
 
